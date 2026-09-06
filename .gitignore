@@ -1,0 +1,47 @@
+# gradle
+build
+.gradle
+
+# idea
+out
+*.ipr
+*.iws
+*.iml
+.idea
+
+# eclipse
+bin
+*.launch
+.settings
+.metadata
+.classpath
+.project
+
+# dev runs
+run
+run2
+runs
+run-data
+logs
+*.log
+
+# working notes
+/*.md
+!/README.md
+research-raw/
+specs/
+
+# extracted TF2 assets, and anything derived from them
+tf2-assets-staging/
+*.mdl
+*.vvd
+*.vtx
+*.vtf
+*.vmt
+*.ctx
+items_game.txt
+src/main/resources/assets/soldiermc/textures/entity/soldier/
+tools/srcparse/*.png
+
+__pycache__/
+*.pyc

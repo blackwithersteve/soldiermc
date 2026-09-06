@@ -1,0 +1,144 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+version = project.mod_version
+group = project.mod_group_id
+
+base {
+    archivesName = project.mod_id
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+    testImplementation platform("org.junit:junit-bom:5.11.4")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "failed"
+        showStandardStreams = true
+    }
+}
+
+loom {
+    runs {
+        client {
+            client()
+        }
+        // Second client on the same machine, for watching the soldier from outside.
+        clientAlt {
+            client()
+            runDir "run2"
+            programArgs("--username", "Dev2")
+        }
+        server {
+            server()
+            programArgs("--nogui")
+        }
+    }
+}
+
+processResources {
+    inputs.properties(
+            'mod_id': project.mod_id,
+            'mod_name': project.mod_name,
+            'mod_version': project.mod_version,
+            'mod_description': project.mod_description,
+            'mod_authors': project.mod_authors,
+            'mod_license': project.mod_license,
+            'minecraft_version': project.minecraft_version,
+            'loader_version': project.loader_version
+    )
+
+    filesMatching('fabric.mod.json') {
+        expand(
+                'mod_id': project.mod_id,
+                'mod_name': project.mod_name,
+                'mod_version': project.mod_version,
+                'mod_description': project.mod_description,
+                'mod_authors': project.mod_authors,
+                'mod_license': project.mod_license,
+                'minecraft_version': project.minecraft_version,
+                'loader_version': project.loader_version
+        )
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 25
+    it.options.encoding = 'UTF-8'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+    from('LICENSE') {
+        rename { "${it}_${project.base.archivesName.get()}" }
+    }
+}
+
+// One source set, so nothing else stops a class the dedicated server loads from
+// referencing a client-only type. Client code lives in com.soldiermc.client plus the
+// mixins listed under "client" in soldiermc.client.mixins.json.
+tasks.register('checkServerSafe') {
+    description = 'Fails if a common class references a client-only type.'
+    group = 'verification'
+    dependsOn tasks.named('compileJava')
+    def classesDir = layout.buildDirectory.dir('classes/java/main')
+    def clientMixinConfig = file('src/main/resources/soldiermc.client.mixins.json')
+    def modJson = file('src/main/resources/fabric.mod.json')
+    inputs.dir(classesDir)
+    inputs.file(clientMixinConfig)
+    inputs.file(modJson)
+    outputs.upToDateWhen { false }
+    doLast {
+        def clientMixinPackage = new groovy.json.JsonSlurper().parse(clientMixinConfig)
+                .package.replace('.', '/') + '/'
+        def clientEntrypoints = (new groovy.json.JsonSlurper().parse(modJson)
+                .entrypoints?.client ?: []).collect { (it instanceof Map ? it.value : it).replace('.', '/') }
+        def clientPackages = ['com/soldiermc/client/', clientMixinPackage]
+        def forbidden = ['net/minecraft/client/', 'com/soldiermc/client/']
+        def offenders = []
+        classesDir.get().asFile.eachFileRecurse { file ->
+            if (!file.name.endsWith('.class')) {
+                return
+            }
+            def name = file.path.replace(File.separator, '/')
+                    .substring(classesDir.get().asFile.path.replace(File.separator, '/').length() + 1)
+            def binary = name[0..-7]
+            if (clientPackages.any { binary.startsWith(it) }) {
+                return
+            }
+            if (clientEntrypoints.any { binary == it || binary.startsWith(it + '$') }) {
+                return
+            }
+            // Type names live in the constant pool as plain UTF-8, so a byte scan sees
+            // every reference the class carries, folded constants included.
+            def bytes = new String(file.bytes, 'ISO-8859-1')
+            def hits = forbidden.findAll { bytes.contains(it) }
+            if (hits) {
+                offenders << "  ${binary}.class -> ${hits.join(', ')}"
+            }
+        }
+        if (offenders) {
+            throw new GradleException((['Common classes reference client-only types; a dedicated server would fail to load them:'] + offenders)
+                    .join(System.lineSeparator()))
+        }
+    }
+}
+
+tasks.named('check') { dependsOn tasks.named('checkServerSafe') }

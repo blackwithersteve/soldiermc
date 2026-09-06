@@ -1,0 +1,33 @@
+{
+	"schemaVersion": 1,
+	"id": "${mod_id}",
+	"version": "${mod_version}",
+	"name": "${mod_name}",
+	"description": "${mod_description}",
+	"authors": [
+		"${mod_authors}"
+	],
+	"license": "${mod_license}",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.soldiermc.SoldierMC"
+		],
+		"client": [
+			"com.soldiermc.SoldierMCClient"
+		]
+	},
+	"mixins": [
+		"soldiermc.mixins.json",
+		{
+			"config": "soldiermc.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

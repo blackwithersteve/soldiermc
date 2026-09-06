@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "package": "com.soldiermc.mixin.client",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "PlayerTravelMixin",
+    "MouseHandlerMixin",
+    "AvatarEyeHeightMixin",
+    "LivingEntityRendererSubmitMixin",
+    "FrameAdvanceMixin",
+    "AttackSuppressMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

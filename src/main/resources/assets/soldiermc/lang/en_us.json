@@ -1,0 +1,10 @@
+{
+  "key.categories.soldiermc.main": "SoldierMC",
+  "key.soldiermc.toggle_physics": "Toggle Source physics",
+  "key.soldiermc.reload": "Reload",
+  "key.soldiermc.voice_menu_1": "Voice menu 1",
+  "key.soldiermc.voice_menu_2": "Voice menu 2",
+  "key.soldiermc.voice_menu_3": "Voice menu 3",
+  "key.soldiermc.toggle_diagnostics": "Toggle instrument panel",
+  "gamerule.soldiermc.rocket_griefing": "Rockets break blocks"
+}

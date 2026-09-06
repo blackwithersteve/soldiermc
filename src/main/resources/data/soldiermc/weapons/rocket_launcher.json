@@ -1,0 +1,31 @@
+{
+  "_comment": "Stock TF2 Rocket Launcher. Distances are Hammer units, times are seconds.",
+  "_provenance": "damage/clip/intervals ICE-decoded from tf2_misc_dir.vpk:scripts/tf_weapon_rocketlauncher.ctx (key E2NcUkG2); speed/radii are hardcoded C++ constants; reload_anim_* MEASURED from models/weapons/c_models/c_soldier_animations.mdl - @dh_reload_start 16 frames @ 30 fps = 0.5, @dh_reload_loop 25 frames @ 30 fps = 0.8. That is the c_model chain the launcher actually uses (attach_to_hands 1 -> c_soldier_arms.mdl -> $includemodel c_soldier_animations.mdl, verified in the file header). The viewmodel v_rocketlauncher_soldier.mdl has @reload_loop at 26 frames = 0.833333 and is NOT in play - do not 'correct' 0.8 toward it.",
+
+  "clip_size": 4,
+  "reserve_ammo": 20,
+  "ammo_per_shot": 1,
+  "damage": 90.0,
+  "bullets_per_shot": 1,
+  "spread": 0.0,
+  "range_hu": 0.0,
+
+  "attack_interval_seconds": 0.8,
+
+  "reloads_singly": true,
+  "reload_start_seconds": 0.1,
+  "reload_repeat_seconds": 0.83,
+  "reload_anim_start_seconds": 0.5,
+  "reload_anim_repeat_seconds": 0.80,
+
+  "projectile_speed_hu": 1100.0,
+  "blast_radius_hu": 146.0,
+  "self_blast_radius_hu": 121.0,
+
+  "damage_ramp_optimal_hu": 512.0,
+  "damage_range_spread": 0.5,
+  "close_range_ramp_scale": 0.5,
+
+  "blast_push_hu": 400.0,
+  "self_damage_scale": 1.0
+}
