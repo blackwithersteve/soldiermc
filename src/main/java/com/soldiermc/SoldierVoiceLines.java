@@ -10,28 +10,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * The Soldier's voice: concepts, the lines each one can say, and the sound events behind them, from
- * TF2's {@code scripts/talker/} rules and its {@code resource/gamemenu} voice menu definition.
- * "Pass to me!" and "ÜberCharge Ready" are silent for the Soldier — an empty response block, and a
- * Medic-only rule.
- */
+/** Concepts with no files are silent for the Soldier in TF2's talker rules. */
 public final class SoldierVoiceLines {
 
-    /** One thing the Soldier can say, and every line he might pick for it. */
     public static final class Concept {
         public final String name;
         public final String label;
         public final String[] files;
-        /**
-         * Scene duration, which is what TF2's rate limiter uses, not the audio length:
-         * {@code ActivateCharge01} locks out for the full 1.5 s cap while its audio runs 0.9 s.
-         */
+        /** Scene duration, which TF2's rate limiter uses instead of the audio length. */
         public final int sceneMs;
-        /** The gesture sequence to play, or null. Slot 0 — the same slot fire and reload use. */
         public String gesture;
         public float gestureSeconds;
-        /** Depletion order, reshuffled when exhausted — Source's response groups do not repeat. */
         public final List<String> bag = new ArrayList<>();
 
         Concept(String name, String label, int sceneMs, String... files) {
@@ -48,20 +37,17 @@ public final class SoldierVoiceLines {
 
     private static final Map<String, SoundEvent> EVENTS = new LinkedHashMap<>();
 
-    /** Attach a gesture to a concept. */
     private static Concept g(Concept c, String sequence, float seconds) {
         c.gesture = sequence;
         c.gestureSeconds = seconds;
         return c;
     }
 
-    // The Soldier's four voice gestures, measured from soldier_animations.mdl. All are DELTA|POST
-    // with the eight leg bones zeroed — the mask the aim matrix uses — so the legs keep walking,
-    // and three carry a left-arm autolayer that runs at the parent's own cycle.
-    private static final String FINGERPOINT = "gesture_primary_go";        // 31 f = 1.0000 s
-    private static final String HANDMOUTH = "gesture_primary_help";        // 36 f = 1.1667 s
-    private static final String FISTPUMP = "gesture_primary_cheer";        // 39 f = 1.2667 s
-    private static final String THUMBSUP = "gesture_primary_positive";     // 31 f = 1.0000 s
+    // Gesture seconds passed to g() are each sequence's length at 30 fps.
+    private static final String FINGERPOINT = "gesture_primary_go";
+    private static final String HANDMOUTH = "gesture_primary_help";
+    private static final String FISTPUMP = "gesture_primary_cheer";
+    private static final String THUMBSUP = "gesture_primary_positive";
 
     private static String[] seq(String stem, int n) {
         String[] out = new String[n];
@@ -93,7 +79,7 @@ public final class SoldierVoiceLines {
         new Concept("TLK_PLAYER_ASK_FOR_BALL", "Pass to me!", 0),
     };
 
-    /** Eight, not nine. */
+    /** Eight entries, not nine, as in TF2. */
     public static final Concept[] MENU_3 = {
         g(new Concept("TLK_PLAYER_HELP", "Help!", 1700, seq("helpme", 3)), HANDMOUTH, 1.1667f),
         g(new Concept("TLK_PLAYER_BATTLECRY", "Battle Cry", 2252, seq("battlecry", 6)), FISTPUMP, 1.2667f),
@@ -108,18 +94,12 @@ public final class SoldierVoiceLines {
 
     public static final Concept[][] MENUS = {MENU_1, MENU_2, MENU_3};
 
-    /** {@code ConceptPain} / {@code PlayerPainSoldier}. Heard by everyone except the attacker. */
     public static final Concept PAIN = new Concept("ConceptPain", "pain", 0, seq("painsharp", 8));
 
-    /** {@code ConceptAttackerPain}. The attacker hears this one instead. */
+    /** What the attacker hears in place of PAIN. */
     public static final Concept ATTACKER_PAIN =
         new Concept("ConceptAttackerPain", "attacker pain", 0, seq("painsevere", 6));
 
-    /**
-     * Death banks from {@code scripts/playerclasses/soldier.ctx}, dispatched by
-     * {@code CTFPlayer::DeathSound}, which tests BLAST before CRITICAL — so a crit rocket kill
-     * plays the sharp bank, never the critical one.
-     */
     public static final Concept DEATH_BLAST =
         new Concept("Soldier.ExplosionDeath", "blast death", 0, seq("painsharp", 8));
     public static final Concept DEATH_CRIT =
@@ -127,14 +107,9 @@ public final class SoldierVoiceLines {
     public static final Concept DEATH_GENERIC =
         new Concept("Soldier.Death", "death", 0, seq("painsevere", 6));
 
-    /** {@code ConceptFire}. The common line; 02 and 03 are a 10% rare variant in TF2. */
     public static final Concept ON_FIRE =
         new Concept("ConceptFire", "on fire", 0, seq("autoonfire", 3));
 
-    /**
-     * {@code PlayerRoundStartSoldier}, {@code predelay "1.0, 5.0"} — the random 1-5 s delay is what
-     * makes a team sound like a squad rather than a chorus.
-     */
     public static final Concept ROUND_START =
         new Concept("ConceptPlayerRoundStart", "round start", 0, seq("battlecry", 6));
 
@@ -142,7 +117,6 @@ public final class SoldierVoiceLines {
         PAIN, ATTACKER_PAIN, DEATH_BLAST, DEATH_CRIT, DEATH_GENERIC, ON_FIRE, ROUND_START,
     };
 
-    /** {@code BlastJump.Whistle} — misc/grenade_jump_lp_01.wav, a looping sound. */
     public static SoundEvent BLAST_JUMP_WHISTLE;
 
     private SoldierVoiceLines() {
@@ -154,7 +128,6 @@ public final class SoldierVoiceLines {
         return out.toArray(new String[0]);
     }
 
-    /** Every distinct voice file the mod can play. Drives both registration and the pack build. */
     public static List<String> allFiles() {
         List<String> out = new ArrayList<>();
         for (Concept[] menu : MENUS) {

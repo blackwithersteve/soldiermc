@@ -9,16 +9,11 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * The firing and reload timing table, in exact substep indices rather than seconds. {@code t_k =
- * 0.015k} and every gate is {@code <=} or {@code >} against a quantised curtime, so the answer is
- * always the next substep at or after the deadline.
- */
+/** Gates use a quantised curtime, so each event lands on the next 0.015 s substep. */
 class WeaponTimingTest {
 
     private static final float DT = 0.015f;
 
-    /** Drives the weapon exactly one call per substep, as Source does. */
     private static final class Rig {
         final GunStats stats = GunStats.ROCKET_LAUNCHER;
         final TFWeaponGun gun = new TFWeaponGun(stats, TfAmmo.PRIMARY);
@@ -44,7 +39,6 @@ class WeaponTimingTest {
             }
         };
 
-        /** @return the substep index just run */
         int step(int buttons) {
             int before = gun.ammoEvents();
             gun.runCommand(substep * DT, buttons, ammo, sink, mv, false);
@@ -65,7 +59,7 @@ class WeaponTimingTest {
 
         assertEquals(List.of(0, 54, 108, 162), r.shotSubsteps.subList(0, 4),
                 "0.8 s at 0.015 per substep is 53.33, so the shot lands on the next substep AT OR "
-                        + "AFTER the deadline — 54, not 53");
+                        + "AFTER the deadline: 54, not 53");
         assertEquals(4, r.gun.shotsFired() - countAfter(r.shotSubsteps, 162),
                 "the clip is four rockets");
     }
@@ -81,12 +75,10 @@ class WeaponTimingTest {
     void singleReloadLandsOnTheAnimEvent() {
         Rig r = new Rig(20);
 
-        // Fire once at substep 0 with +reload already held, clip 4 -> 3.
         int buttons = Buttons.IN_ATTACK | Buttons.IN_RELOAD;
         r.step(buttons);
         assertEquals(3, r.gun.clip(), "the shot came out of the clip");
 
-        // Release the trigger, hold reload.
         r.run(Buttons.IN_RELOAD, 200);
 
         assertEquals(List.of(111), r.ammoEventSubsteps.subList(0, 1),
@@ -96,7 +88,7 @@ class WeaponTimingTest {
     }
 
     @Test
-    @DisplayName("per-rocket cadence is exactly 55 substeps — 0.825 s, not 0.810 and not 0.840")
+    @DisplayName("per-rocket cadence is exactly 55 substeps (0.825 s, not 0.810 and not 0.840)")
     void perRocketCadence() {
         Rig r = new Rig(20);
         r.gun.setClip(0);
@@ -120,8 +112,6 @@ class WeaponTimingTest {
     @Test
     @DisplayName("cancelling after the clunk keeps the rocket; cancelling before it does not")
     void theCancelWindow() {
-        // The rocket enters the clip 0.333 s into a 0.8 s loop, leaving 0.467 s in which letting go
-        // still keeps it.
         Rig probe = new Rig(20);
         probe.gun.setClip(0);
         probe.run(Buttons.IN_RELOAD, 200);
@@ -142,9 +132,7 @@ class WeaponTimingTest {
     @Test
     @DisplayName("M2 locks out primary fire after half a second, but not instantly")
     void secondaryBlocksPrimary() {
-        // SecondaryAttack is semi-auto: the first command with M2 down passes the gate, blocking
-        // that command, and stamps nextSecondaryAttack = +0.5, so primary is free for 0.5 s. The
-        // latch never re-stamps the timer, so after that primary is blocked while M2 is held.
+        // M2 blocks only its first command and stamps nextSecondaryAttack 0.5 s ahead.
         Rig r = new Rig(20);
         r.run(Buttons.IN_ATTACK | Buttons.IN_ATTACK2, 200);
 

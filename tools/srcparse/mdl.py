@@ -1,10 +1,5 @@
-"""
-Source engine MDL (studiomdl) reader, IDST version 48.
-Source space is right-handed Z-up, X forward, Y left; units are Hammer units.
-"""
+"""MDL v48 reader. Source space: right-handed, Z up, X forward, Y left."""
 import struct, io, math, sys
-
-# ---- primitives
 
 def u8(b, o):   return b[o]
 def i32(b, o):  return struct.unpack_from('<i', b, o)[0]
@@ -16,22 +11,18 @@ def vec3(b, o): return struct.unpack_from('<3f', b, o)
 def vec4(b, o): return struct.unpack_from('<4f', b, o)
 
 def cstr(b, o):
-    """NUL-terminated string at absolute offset o. o==0 means 'no name'."""
     if o <= 0 or o >= len(b):
         return ''
     e = b.index(b'\x00', o)
     return b[o:e].decode('ascii', 'replace')
 
 def matrix3x4(b, o):
-    """Source matrix3x4_t: 3 rows of 4 floats, row-major; column 3 is the translation."""
+    """matrix3x4_t: 3 rows of 4 floats, row-major; column 3 is the translation."""
     return [struct.unpack_from('<4f', b, o + 16 * r) for r in range(3)]
 
 
-# ---- studiohdr_t
-# sizeof(studiohdr_t) == 408 == 0x198 for version 48, same as v49.
 STUDIOHDR_FIELDS = [
-    # (name, offset, kind)
-    ('id',                       0x000, 'fourcc'),
+    ('id',                      0x000, 'fourcc'),
     ('version',                  0x004, 'i'),
     ('checksum',                 0x008, 'i'),
     ('name',                     0x00C, 'char[64]'),
@@ -110,9 +101,9 @@ STUDIOHDR_FIELDS = [
     ('studiohdr2index',          0x190, 'i'),
     ('unused2',                  0x194, 'i'),
 ]
-STUDIOHDR_SIZE = 0x198  # 408
+STUDIOHDR_SIZE = 0x198
 
-# studiohdr2_t, located at hdr.studiohdr2index (absolute from file start)
+# studiohdr2_t sits at hdr.studiohdr2index, absolute from the file start.
 STUDIOHDR2_FIELDS = [
     ('numsrcbonetransform',          0x00, 'i'),
     ('srcbonetransformindex',        0x04, 'i'),
@@ -122,7 +113,6 @@ STUDIOHDR2_FIELDS = [
     ('sznameindex',                  0x14, 'i'),
     ('m_nBoneFlexDriverCount',       0x18, 'i'),
     ('m_nBoneFlexDriverIndex',       0x1C, 'i'),
-    # int reserved[56] -> 0x20 .. 0xFF ; sizeof(studiohdr2_t) == 0x100 == 256
 ]
 
 
@@ -139,19 +129,16 @@ def _read_fields(b, base, fields):
     return out
 
 
-# ---- mstudiobone_t
-# sizeof(mstudiobone_t) == 216, in v48 and v49.
 BONE_SIZE = 216
 BONE_FIELDS = [
     ('sznameindex',      0x00, 'i'),   # relative to the bone struct base
     ('parent',           0x04, 'i'),
-    # int bonecontroller[6]  0x08..0x1F   (-1 = none)
     ('pos',              0x20, 'v3'),
-    ('quat',             0x2C, 'v4'),   # x,y,z,w
-    ('rot',              0x3C, 'v3'),   # euler radians (the "reference" rotation)
-    ('posscale',         0x48, 'v3'),   # animation decode scale for pos channels
-    ('rotscale',         0x54, 'v3'),   # animation decode scale for rot channels
-    ('poseToBone',       0x60, 'm3x4'), # 48 bytes, 0x60..0x8F
+    ('quat',             0x2C, 'v4'),   # x, y, z, w
+    ('rot',              0x3C, 'v3'),   # Euler angles in radians
+    ('posscale',         0x48, 'v3'),
+    ('rotscale',         0x54, 'v3'),
+    ('poseToBone',       0x60, 'm3x4'),
     ('qAlignment',       0x90, 'v4'),
     ('flags',            0xA0, 'i'),
     ('proctype',         0xA4, 'i'),
@@ -159,10 +146,8 @@ BONE_FIELDS = [
     ('physicsbone',      0xAC, 'i'),
     ('surfacepropidx',   0xB0, 'i'),
     ('contents',         0xB4, 'i'),
-    # int unused[8]  0xB8 .. 0xD7  -> 216
 ]
 
-# mstudiobone_t::flags
 BONE_FLAGS = [
     (0x0001, 'PHYSICALLY_SIMULATED'), (0x0002, 'PHYSICS_PROCEDURAL'),
     (0x0004, 'ALWAYS_PROCEDURAL'),    (0x0008, 'SCREEN_ALIGN_SPHERE'),
@@ -203,7 +188,6 @@ class MDL:
         self.attachments = self._attachments()
         self.poseparams = self._poseparams()
 
-    # ---- bones
     def _bones(self):
         b = self.b; out = []
         for i in range(self.hdr['numbones']):
@@ -229,7 +213,6 @@ class MDL:
             out.append(d)
         return out
 
-    # ---- textures  (mstudiotexture_t, 64 bytes)
     def _textures(self):
         b = self.b; out = []
         for i in range(self.hdr['numtextures']):
@@ -249,11 +232,10 @@ class MDL:
             out.append(list(struct.unpack_from('<%dh' % n, b, base)))
         return out
 
-    # ---- bodypart / model / mesh tree
     def _bodyparts(self):
         b = self.b; out = []
         for i in range(self.hdr['numbodyparts']):
-            base = self.hdr['bodypartindex'] + i * 16   # mstudiobodyparts_t = 16 bytes
+            base = self.hdr['bodypartindex'] + i * 16   # sizeof(mstudiobodyparts_t)
             bp = {'index': i,
                   'name': cstr(b, base + i32(b, base + 0)),
                   'nummodels': i32(b, base + 4),
@@ -261,14 +243,14 @@ class MDL:
                   'modelindex': i32(b, base + 12),
                   'models': []}
             for m in range(bp['nummodels']):
-                mb = base + bp['modelindex'] + m * 148   # mstudiomodel_t = 148 bytes
+                mb = base + bp['modelindex'] + m * 148   # sizeof(mstudiomodel_t)
                 md = {'name': b[mb:mb + 64].split(b'\x00')[0].decode('ascii', 'replace'),
                       'type': i32(b, mb + 64),
                       'boundingradius': f32(b, mb + 68),
                       'nummeshes': i32(b, mb + 72),
                       'meshindex': i32(b, mb + 76),
                       'numvertices': i32(b, mb + 80),
-                      'vertexindex': i32(b, mb + 84),   # BYTE offset into the VVD vertex array
+                      'vertexindex': i32(b, mb + 84),   # byte offset into the VVD vertex array
                       'tangentsindex': i32(b, mb + 88),
                       'numattachments': i32(b, mb + 92),
                       'attachmentindex': i32(b, mb + 96),
@@ -276,25 +258,24 @@ class MDL:
                       'eyeballindex': i32(b, mb + 104),
                       'meshes': []}
                 for k in range(md['nummeshes']):
-                    kb = mb + md['meshindex'] + k * 116  # mstudiomesh_t = 116 bytes
+                    kb = mb + md['meshindex'] + k * 116  # sizeof(mstudiomesh_t)
                     mesh = {'material': i32(b, kb + 0),
                             'modelindex': i32(b, kb + 4),
                             'numvertices': i32(b, kb + 8),
-                            'vertexoffset': i32(b, kb + 12),  # vertex index offset inside the model
+                            'vertexoffset': i32(b, kb + 12),
                             'numflexes': i32(b, kb + 16),
                             'flexindex': i32(b, kb + 20),
                             'materialtype': i32(b, kb + 24),
                             'materialparam': i32(b, kb + 28),
                             'meshid': i32(b, kb + 32),
                             'center': vec3(b, kb + 36),
-                            # mstudio_meshvertexdata_t vertexdata: int modelvertexdata + int numLODVertexes[8]
+                            # vertexdata: int modelvertexdata, then int numLODVertexes[8]
                             'numLODVertexes': struct.unpack_from('<8i', b, kb + 52)}
                     md['meshes'].append(mesh)
                 bp['models'].append(md)
             out.append(bp)
         return out
 
-    # ---- attachments (mstudioattachment_t = 92 bytes)
     def _attachments(self):
         b = self.b; out = []
         for i in range(self.hdr['numlocalattachments']):
@@ -305,7 +286,6 @@ class MDL:
                         'local': matrix3x4(b, base + 12)})
         return out
 
-    # ---- pose parameters (mstudioposeparamdesc_t = 20 bytes)
     def _poseparams(self):
         b = self.b; out = []
         for i in range(self.hdr['numlocalposeparameters']):
@@ -317,13 +297,12 @@ class MDL:
                         'loop': f32(b, base + 16)})
         return out
 
-    # ---- include models (mstudiomodelgroup_t = 8 bytes)
     def include_models(self):
         b = self.b; out = []
         for i in range(self.hdr['numincludemodels']):
             base = self.hdr['includemodelindex'] + i * 8
-            out.append((cstr(b, base + i32(b, base + 0)),   # label
-                        cstr(b, base + i32(b, base + 4))))  # filename
+            out.append((cstr(b, base + i32(b, base + 0)),
+                        cstr(b, base + i32(b, base + 4))))
         return out
 
     def bone_tree_lines(self):

@@ -3,14 +3,9 @@ package com.soldiermc.source;
 import com.soldiermc.bridge.SweepResolve;
 import com.soldiermc.bridge.Units;
 
-/**
- * Minecraft's collision semantics, not a swept trace: {@code Entity.collideBoundingBox} resolves
- * each axis independently, completing the unblocked ones fully, through the real
- * {@link SweepResolve}. Solid below mcY = 0, plus a slab at mcX &gt;= wallX.
- */
+/** Minecraft's per-axis collision through the real SweepResolve, not a swept trace. */
 public final class BlockWorld implements WorldQuery {
 
-    /** Wall plane in Minecraft blocks; everything at or beyond this x is solid. */
     public double wallXBlocks = Double.POSITIVE_INFINITY;
 
     private static final double PROBE_WIDTH = 0.6;
@@ -21,7 +16,7 @@ public final class BlockWorld implements WorldQuery {
                       float toX, float toY, float toZ) {
         out.clear(toX, toY, toZ);
 
-        // engine -> minecraft (the rotation: mx = ex, my = ez, mz = -ey)
+        // Engine to Minecraft axes: mx = ex, my = ez, mz = -ey.
         double fx = Units.blocks(fromX), fy = Units.blocks(fromZ), fz = Units.engineYToMcZ(fromY);
         double tx = Units.blocks(toX), ty = Units.blocks(toZ), tz = Units.engineYToMcZ(toY);
 
@@ -31,10 +26,10 @@ public final class BlockWorld implements WorldQuery {
         double h = Units.blocks(hullHeight);
         double half = PROBE_WIDTH / 2.0;
 
-        // Minecraft's per-axis resolution: Y first, then X, then Z (Direction.axisStepOrder).
+        // Minecraft resolves Y, then X, then Z (Direction.axisStepOrder).
         double gotY = clampY(fy, wantY);
         double gotX = clampX(fx + 0.0, wantX, half);
-        double gotZ = wantZ; // no geometry constrains z in this world
+        double gotZ = wantZ;
 
         SweepResolve.resolve(out, wantX, wantY, wantZ, gotX, gotY, gotZ,
                 fromX, fromY, fromZ, toX, toY, toZ);
@@ -54,7 +49,7 @@ public final class BlockWorld implements WorldQuery {
         return wantX;
     }
 
-    /** Not exercised by the bridge-semantics tests; the flat world owns the line-trace cases. */
+    /** Line traces are unused here; FlatWorld covers them. */
     @Override
     public void traceLineBrush(TraceResult out,
                                float fromX, float fromY, float fromZ,

@@ -1,20 +1,13 @@
-"""
-Source MDL animation decoding: mstudioanimdesc_t, mstudioseqdesc_t, the per-bone
-mstudioanim_t stream, the RLE mstudioanimvalue_t encoding, Quaternion48/Quaternion64/
-Vector48 and animation sections. Ported from ExtractAnimValue / CalcBonePosition /
-CalcBoneQuaternion in bone_setup.cpp.
-"""
+"""MDL animation decoding ported from bone_setup.cpp."""
 import struct, math
 
-# mstudioanim_t::flags
-STUDIO_ANIM_RAWPOS  = 0x01   # Vector48
-STUDIO_ANIM_RAWROT  = 0x02   # Quaternion48
-STUDIO_ANIM_ANIMPOS = 0x04   # mstudioanim_valueptr_t
-STUDIO_ANIM_ANIMROT = 0x08   # mstudioanim_valueptr_t
+STUDIO_ANIM_RAWPOS  = 0x01
+STUDIO_ANIM_RAWROT  = 0x02
+STUDIO_ANIM_ANIMPOS = 0x04
+STUDIO_ANIM_ANIMROT = 0x08
 STUDIO_ANIM_DELTA   = 0x10
-STUDIO_ANIM_RAWROT2 = 0x20   # Quaternion64
+STUDIO_ANIM_RAWROT2 = 0x20
 
-# mstudioanimdesc_t::flags
 STUDIO_LOOPING  = 0x0001
 STUDIO_SNAP     = 0x0002
 STUDIO_DELTA    = 0x0004
@@ -34,17 +27,15 @@ ANIMDESC_SIZE = 100
 SEQDESC_SIZE = 212
 
 
-# ---- packed types
 def float16(u):
-    """Valve float16 -> float. IEEE half layout (sign 1, exp 5, mant 10), bias 15,
-    except that exponent 31 maps to max float rather than inf/NaN."""
+    """IEEE half precision, except exponent 31 decodes to max float, not inf or NaN."""
     s = (u >> 15) & 1
     e = (u >> 10) & 0x1F
     m = u & 0x3FF
     if e == 0:
-        v = m / 1024.0 * (2.0 ** -14)          # denormal
+        v = m / 1024.0 * (2.0 ** -14)
     elif e == 31:
-        v = 65504.0                            # Valve: maxfloat, not inf
+        v = 65504.0
     else:
         v = (1.0 + m / 1024.0) * (2.0 ** (e - 15))
     return -v if s else v
@@ -57,7 +48,7 @@ def vector48(b, o):
 
 
 def quat48(b, o):
-    """6 bytes: x:16 y:16 z:15 wneg:1  -> (x,y,z,w)"""
+    """Bit layout: x:16 y:16 z:15 wneg:1."""
     xs, ys, zs = struct.unpack_from('<3H', b, o)
     x = (xs - 32768) * (1.0 / 32768.0)
     y = (ys - 32768) * (1.0 / 32768.0)
@@ -69,7 +60,7 @@ def quat48(b, o):
 
 
 def quat64(b, o):
-    """8 bytes: x:21 y:21 z:21 wneg:1 (little-endian uint64) -> (x,y,z,w)"""
+    """Bit layout of a little-endian uint64: x:21 y:21 z:21 wneg:1."""
     v = struct.unpack_from('<Q', b, o)[0]
     xs = v & 0x1FFFFF
     ys = (v >> 21) & 0x1FFFFF
@@ -83,20 +74,13 @@ def quat64(b, o):
     return (x, y, z, -w if wneg else w)
 
 
-# ---- RLE animvalue
 def extract_anim_value(b, base, frame, scale):
-    """Port of ExtractAnimValue(), bone_setup.cpp. `base` is the absolute file offset of
-    the first mstudioanimvalue_t; returns the value at `frame` and at `frame+1`.
-
-    mstudioanimvalue_t is a 2-byte union: struct { byte valid; byte total; } or short
-    value. A run is one header plus `valid` shorts covering `total` frames; frames past
-    `valid` repeat the last stored value.
-    """
+    """RLE run: (valid, total) header then `valid` shorts; later frames repeat the last."""
     if base <= 0:
         return 0.0, 0.0
 
     def hdr(p):
-        return b[p], b[p + 1]                       # valid, total
+        return b[p], b[p + 1]
 
     def val(p):
         return struct.unpack_from('<h', b, p)[0]
@@ -113,7 +97,7 @@ def extract_anim_value(b, base, frame, scale):
         p += (valid + 1) * 2
         valid, total = hdr(p)
         if total == 0:
-            return 0.0, 0.0                          # ran off the end
+            return 0.0, 0.0
 
     if valid > k + 1:
         return val(p + (k + 1) * 2) * scale, val(p + (k + 2) * 2) * scale
@@ -123,12 +107,11 @@ def extract_anim_value(b, base, frame, scale):
     v1 = val(p + valid * 2) * scale
     if total > k + 1:
         return v1, v1
-    return v1, val(p + (valid + 2) * 2) * scale      # first value of the NEXT run
+    return v1, val(p + (valid + 2) * 2) * scale      # first value of the next run
 
 
-# ---- euler <-> quat
 def angle_quaternion(rx, ry, rz):
-    """Port of AngleQuaternion(RadianEuler). Intrinsic Z*Y*X."""
+    """AngleQuaternion(RadianEuler): intrinsic Z*Y*X rotation order."""
     sy, cy = math.sin(rz * 0.5), math.cos(rz * 0.5)
     sp, cp = math.sin(ry * 0.5), math.cos(ry * 0.5)
     sr, cr = math.sin(rx * 0.5), math.cos(rx * 0.5)
@@ -150,7 +133,6 @@ def quat_slerp_lin(q1, q2, s):
     return tuple(c / n for c in q)
 
 
-# ---- descriptors
 def read_animdesc(b, base):
     d = {'off': base}
     d['baseptr'] = struct.unpack_from('<i', b, base + 0)[0]
@@ -221,14 +203,11 @@ def _cstr(b, o):
     return b[o:b.index(b'\x00', o)].decode('ascii', 'replace')
 
 
-# ---- the anim stream
 def anim_data_offset(b, ad, frame):
-    """Absolute offset of the mstudioanim_t chain covering `frame`, plus the
-    frame index within that section. Handles sectioned animations."""
     if ad['sectionframes'] == 0:
         return ad['off'] + ad['animindex'], frame
     isec = frame // ad['sectionframes']
-    # mstudioanimsections_t { int animblock; int animindex; } -- 8 bytes
+    # mstudioanimsections_t: int animblock, int animindex.
     so = ad['off'] + ad['sectionindex'] + isec * 8
     animblock, animindex = struct.unpack_from('<ii', b, so)
     assert animblock == 0, 'external .ani animblock not present in this MDL'
@@ -236,9 +215,7 @@ def anim_data_offset(b, ad, frame):
 
 
 def iter_bone_anims(b, off):
-    """Walk the mstudioanim_t linked list at `off`.
-    mstudioanim_t { byte bone; byte flags; short nextoffset; }  -- 4 bytes.
-    nextoffset is relative to this struct; 0 ends the chain."""
+    """mstudioanim_t is byte bone, byte flags, short nextoffset; 0 ends the chain."""
     while True:
         bone = b[off]
         flags = b[off + 1]
@@ -275,7 +252,6 @@ def _pos_ptr(off, flags):
 
 
 def calc_bone_quaternion(b, off, flags, frame, s, bone):
-    """bone = the mstudiobone_t dict from mdl.MDL (needs quat, rot, rotscale)."""
     if flags & STUDIO_ANIM_RAWROT:
         return quat48(b, _quat_ptr(off, flags))
     if flags & STUDIO_ANIM_RAWROT2:
@@ -321,8 +297,6 @@ def calc_bone_position(b, off, flags, frame, s, bone):
 
 
 def sample_frame(mdlobj, ad, frame, s=0.0):
-    """Returns {bone index: (pos, quat)} for one integer frame of one animdesc.
-    Bones absent from the stream keep their bind pose."""
     b = mdlobj.b
     off, local_frame = anim_data_offset(b, ad, frame)
     out = {}

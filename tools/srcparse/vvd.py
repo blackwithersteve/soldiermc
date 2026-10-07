@@ -1,7 +1,4 @@
-"""
-Source .vvd (vertex data) reader, IDSV version 4. The on-disk vertex array is in the
-"source" order studiomdl emitted; VTX strip indices address the fixed-up order.
-"""
+"""VVD v4 reader; VTX indices address the fixed-up order, not the on-disk one."""
 import struct
 
 HEADER_SIZE = 64
@@ -20,17 +17,14 @@ class VVD:
         (self.numFixups, self.fixupTableStart,
          self.vertexDataStart, self.tangentDataStart) = struct.unpack_from('<4i', b, 48)
 
-        # ---- raw vertices, in on-disk ("source") order
         self.num_raw = self.numLODVertexes[0] if self.numFixups == 0 else None
         self.num_raw = (self.tangentDataStart - self.vertexDataStart) // VERTEX_SIZE
         self.raw = [self._vertex(self.vertexDataStart + i * VERTEX_SIZE)
                     for i in range(self.num_raw)]
 
-        # ---- fixups
         self.fixups = [struct.unpack_from('<3i', b, self.fixupTableStart + i * FIXUP_SIZE)
                        for i in range(self.numFixups)]   # (lod, sourceVertexID, numVertexes)
 
-        # ---- tangents: Vector4D per raw vertex, parallel array
         self.tangents = None
         if self.tangentDataStart:
             n = self.num_raw
@@ -39,9 +33,9 @@ class VVD:
 
     def _vertex(self, o):
         b = self.b
-        w = struct.unpack_from('<3f', b, o)            # float weight[3]
-        bones = struct.unpack_from('<3b', b, o + 12)   # char bone[3]
-        nb = b[o + 15]                                 # byte numbones
+        w = struct.unpack_from('<3f', b, o)
+        bones = struct.unpack_from('<3b', b, o + 12)
+        nb = b[o + 15]
         pos = struct.unpack_from('<3f', b, o + 16)
         nrm = struct.unpack_from('<3f', b, o + 28)
         uv = struct.unpack_from('<2f', b, o + 40)
@@ -49,10 +43,7 @@ class VVD:
                 'pos': pos, 'normal': nrm, 'uv': uv}
 
     def vertices_for_lod(self, lod):
-        """Apply the fixup table: the vertex list for `lod`, in the order VTX strip
-        indices address. A fixup's `lod` field means the run is present in LODs
-        0..lod, so the test is >=, not ==.
-        """
+        """A fixup's lod is the last LOD its run appears in, hence >= rather than ==."""
         if self.numFixups == 0:
             return self.raw[:self.numLODVertexes[lod]]
         out = []

@@ -32,9 +32,10 @@ the mod runs with vanilla rendering and no audio, and the tests that need assets
 | `com.soldiermc.studio` | MDL/VVD/VTX readers, animation decode, skinning. |
 | `com.soldiermc.animstate` | `CMultiPlayerAnimState` port. |
 | `com.soldiermc.client` | Rendering, HUD, input, audio. |
+| `com.soldiermc.weapon` | Weapon stats from data packs (`data/soldiermc/weapons`). |
+| `com.soldiermc.mixin` | Hooks into Minecraft's movement, input and rendering. |
 | `tools/` | Asset extraction, and a Python reader for the same model formats. |
 
-Constants in `com.soldiermc.source` carry a `file.cpp:LINE` citation into the Source SDK 2013 tree.
-Hammer units throughout that package; `Units` is the only conversion site. Source is z-up and
-right-handed, and the map to Minecraft is a rotation (`mx = ex, my = ez, mz = -ey`) — the naive
-axis swap is a reflection.
+`com.soldiermc.source` ports Source SDK 2013 code and works in Hammer units; `Units` is the only
+conversion site. Source is z-up and right-handed, so the map to Minecraft is a rotation
+(`mx = ex, my = ez, mz = -ey`), not an axis swap.

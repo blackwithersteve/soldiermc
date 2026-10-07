@@ -12,19 +12,13 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 
-/**
- * Builds a resource pack on disk from the extraction staging directory and enables it. Minecraft's
- * sound engine only plays audio a resource pack provides, and extracted TF2 assets do not ship in
- * the jar, so the audio is copied into the game's {@code resourcepacks/} folder at runtime and the
- * pack is selected programmatically. Idempotent: if every file is present, nothing is rewritten.
- */
+/** Minecraft plays audio only from resource packs, so the TF2 audio becomes one. */
 public final class SoldierResourcePack {
 
     private static final String PACK_ID = "soldiermc-tf2";
-    /** Folder packs are addressed as {@code file/<name>} in the repository. */
+    /** Folder packs are addressed as file/<name> in the pack repository. */
     private static final String PACK_HANDLE = "file/" + PACK_ID;
 
-    /** Staged file -> path inside the pack's sounds directory. */
     private static final String[][] SOUNDS = {
         {"rocket_shoot.ogg", "weapons/rocket_shoot.ogg"},
         {"rocket_shoot_crit.ogg", "weapons/rocket_shoot_crit.ogg"},
@@ -40,11 +34,7 @@ public final class SoldierResourcePack {
     private SoldierResourcePack() {
     }
 
-    /**
-     * Build the pack if the staged audio is present, and enable it if it is not already on.
-     *
-     * @return true if the pack was newly enabled, meaning the caller should reload resources
-     */
+    /** Returns true when the caller must reload resources. */
     public static boolean ensureInstalled() {
         if (built) return false;
         built = true;
@@ -53,7 +43,7 @@ public final class SoldierResourcePack {
         if (staging == null) return false;
         Path ogg = staging.resolve("ogg");
         if (!Files.isDirectory(ogg)) {
-            SoldierMC.LOGGER.info("[soldiermc] no staged audio at {} - keeping placeholder sounds", ogg);
+            SoldierMC.LOGGER.info("[soldiermc] no staged audio at {}, keeping placeholder sounds", ogg);
             return false;
         }
 
@@ -64,7 +54,6 @@ public final class SoldierResourcePack {
 
             boolean wroteAnything = false;
 
-            // Voice lines, driven off the same list the sound events are registered from.
             for (String vo : com.soldiermc.SoldierVoiceLines.allFiles()) {
                 Path src = ogg.resolve("vo/" + vo + ".ogg");
                 if (!Files.exists(src)) continue;
@@ -98,8 +87,6 @@ public final class SoldierResourcePack {
                 return enableIfNeeded();
             }
 
-            // The mcmeta is always rewritten, and a change forces a reload: a pack written by an
-            // older build would otherwise keep its stale format.
             String meta = packMeta();
             Path metaPath = packs.resolve("pack.mcmeta");
             if (!Files.exists(metaPath) || !Files.readString(metaPath, StandardCharsets.UTF_8).equals(meta)) {
@@ -110,8 +97,7 @@ public final class SoldierResourcePack {
                     StandardCharsets.UTF_8);
 
             SoldierMC.LOGGER.info("[soldiermc] built the TF2 audio pack at {}", packs);
-            // A rewritten manifest needs a reload even if the pack is already selected, or the stale
-            // "incompatible" mark in options.txt survives and the pack stays silent.
+            // Reload even if selected, or options.txt keeps the pack marked incompatible.
             boolean newlyEnabled = enableIfNeeded();
             return newlyEnabled || wroteAnything;
         } catch (IOException e) {
@@ -120,11 +106,7 @@ public final class SoldierResourcePack {
         }
     }
 
-    /**
-     * The pack manifest, serialised through {@code PackMetadataSection}'s own codec. 26.2 replaced
-     * the flat {@code "pack_format": N} with a {@code major.minor} pair and a supported range; a
-     * manifest with the old shape loads, is marked incompatible, and every sound in it goes silent.
-     */
+    /** 26.2 wants a major.minor format range; a flat pack_format loads as incompatible. */
     static String packMeta() {
         var format = net.minecraft.server.packs.metadata.pack.PackFormat.of(
                 SharedConstants.RESOURCE_PACK_FORMAT_MAJOR,
@@ -145,7 +127,6 @@ public final class SoldierResourcePack {
         return root + "\n";
     }
 
-    /** True once the audio pack is selected. */
     public static boolean installed() {
         return installed;
     }
@@ -168,13 +149,8 @@ public final class SoldierResourcePack {
         return true;
     }
 
-    /**
-     * One entry per event. The explosion lists all three variants so Minecraft picks between them,
-     * which is what {@code BaseExplosionEffect.Sound}'s three {@code rndwave} entries do.
-     */
     static String soundsJson() {
         StringBuilder sb = new StringBuilder(WEAPON_SOUNDS_JSON.stripTrailing());
-        // Splice the voice entries in before the closing brace.
         int close = sb.lastIndexOf("}");
         sb.setLength(close);
         for (String vo : com.soldiermc.SoldierVoiceLines.allFiles()) {
@@ -185,7 +161,6 @@ public final class SoldierResourcePack {
         return sb.toString();
     }
 
-    /** One {@code sounds.json} entry, appended after an existing one. */
     private static void entry(StringBuilder sb, String key, String path) {
         sb.append("  ,\"").append(key).append("\": {\n")
           .append("    \"category\": \"player\",\n")

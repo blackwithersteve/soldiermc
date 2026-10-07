@@ -6,13 +6,6 @@ import net.minecraft.client.Minecraft;
 import com.soldiermc.SoldierSoundEvents;
 import net.minecraft.sounds.SoundSource;
 
-/**
- * Weapon audio, resolved from {@code game_sounds_weapons.txt}: {@code Weapon_RPG.Single} is
- * {@code weapons/rocket_shoot.wav}, {@code Weapon_RPG.Reload} is {@code weapons/rocket_reload.wav},
- * and {@code BaseExplosionEffect.Sound} picks at random between {@code explode1/2/3}. The files are
- * served by a pack built at runtime from the extraction staging directory, so nothing extracted
- * from TF2 is in the jar; see {@code SoldierResourcePack}.
- */
 public final class SoldierSounds {
 
     private SoldierSounds() {
@@ -28,11 +21,6 @@ public final class SoldierSounds {
             default -> {
             }
         }
-    }
-
-    /** The reload clunk, fired from the animation event rather than from the state change. */
-    public static void reloadClunk() {
-        play(SoldierSoundEvents.ROCKET_RELOAD, 1.0f, 1.0f);
     }
 
     public static void explosion(float huX, float huY, float huZ) {

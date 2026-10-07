@@ -5,11 +5,7 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
-/**
- * One weapon's numbers, loaded from data/soldiermc/weapons/&lt;name&gt;.json. Every field is optional
- * with a default, so a partial file overrides only what it names; distances are Hammer units and
- * times seconds - TF2's own units, not blocks and ticks - and conversion happens through SourceFeel.
- */
+/** Distances are Hammer units and times are seconds; every JSON key is optional. */
 public record WeaponStats(
     int clipSize,
     int reserveAmmo,
@@ -35,14 +31,12 @@ public record WeaponStats(
     float selfDamageScale
 ) {
 
-    /** Stock Rocket Launcher, so the mod runs correctly with no data file present at all. */
     public static final WeaponStats ROCKET_LAUNCHER_FALLBACK = new WeaponStats(
         4, 20, 1, 90.0f, 1, 0.0f, 0.0f,
         0.8f, 0.1f, 0.83f, true, 0.50f, 0.80f, 0.2f,
         1100.0f, 146.0f, 121.0f,
         512.0f, 0.5f, 0.5f, 400.0f, 1.0f);
 
-    /** Ammo, damage and timing: the 14 keys that come out of the weapon script. */
     private record Script(
         int clipSize, int reserveAmmo, int ammoPerShot, float damage, int bulletsPerShot,
         float spread, float rangeHu, float attackIntervalSeconds, float reloadStartSeconds,
@@ -50,7 +44,6 @@ public record WeaponStats(
         float reloadAnimRepeatSeconds, float smackDelaySeconds) {
     }
 
-    /** Ballistics and the damage ramp: the 8 keys that come from hardcoded C++ constants. */
     private record Ballistics(
         float projectileSpeedHu, float blastRadiusHu, float selfBlastRadiusHu,
         float damageRampOptimalHu, float damageRangeSpread, float closeRangeRampScale,
@@ -98,11 +91,7 @@ public record WeaponStats(
             .forGetter(Ballistics::selfDamageScale)
     ).apply(i, Ballistics::new));
 
-    /**
-     * Two map codecs joined, because {@code group()} is only overloaded to 16 arguments and this
-     * record has 22 fields. {@code mapPair} merges both key sets into one object, so the JSON stays
-     * flat and keeps matching the extractor's output shape.
-     */
+    /** Two map codecs, as group() takes at most 16 fields; mapPair keeps the JSON flat. */
     public static final Codec<WeaponStats> CODEC = Codec.mapPair(SCRIPT, BALLISTICS).codec()
         .xmap(WeaponStats::join, WeaponStats::split);
 
@@ -128,19 +117,5 @@ public record WeaponStats(
             new Ballistics(w.projectileSpeedHu, w.blastRadiusHu, w.selfBlastRadiusHu,
                 w.damageRampOptimalHu, w.damageRangeSpread, w.closeRangeRampScale,
                 w.blastPushHu, w.selfDamageScale));
-    }
-
-    /**
-     * The reload cadence the engine uses. m_bReloadsSingly is true for the Rocket Launcher and
-     * Shotgun, and CTFWeaponBase::ReloadSingly calls SetReloadTimer(SequenceDuration()) - the
-     * viewmodel animation length; TimeReloadStart/TimeReload are the fallback if SendWeaponAnim
-     * fails.
-     */
-    public float effectiveReloadStart() {
-        return reloadsSingly ? reloadAnimStartSeconds : reloadStartSeconds;
-    }
-
-    public float effectiveReloadRepeat() {
-        return reloadsSingly ? reloadAnimRepeatSeconds : reloadRepeatSeconds;
     }
 }

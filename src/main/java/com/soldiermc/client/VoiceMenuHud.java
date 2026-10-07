@@ -10,10 +10,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.resources.Identifier;
 
-/**
- * The voice command menu, lower left. Silent entries are dimmed rather than hidden, as TF2 draws
- * them: "Pass to me!" has an empty response block and "ÜberCharge Ready" is Medic-only.
- */
+/** Silent entries are dimmed rather than hidden, as TF2 draws them. */
 public final class VoiceMenuHud {
 
     private static final int TITLE = 0xFFD8B48C;
@@ -53,7 +50,6 @@ public final class VoiceMenuHud {
         width += PAD * 2;
         int height = PAD * 2 + LINE_HEIGHT * (entries.length + 1);
 
-        // Lower left, clear of the hotbar.
         int x = 6;
         int y = g.guiHeight() - height - 46;
 

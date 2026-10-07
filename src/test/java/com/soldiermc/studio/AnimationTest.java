@@ -12,7 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The animation chain: RLE decode → forward kinematics → poseToBone → skinning. */
 class AnimationTest {
 
     private static final Path DIR = Path.of("tf2-assets-staging/models/player");
@@ -20,7 +19,7 @@ class AnimationTest {
     private static byte[] read(String name) {
         try {
             Path p = DIR.resolve(name);
-            Assumptions.assumeTrue(Files.exists(p), "extracted assets absent — skipping");
+            Assumptions.assumeTrue(Files.exists(p), "extracted assets absent, skipping");
             return Files.readAllBytes(p);
         } catch (Exception e) {
             Assumptions.abort("could not read " + name + ": " + e);
@@ -40,8 +39,6 @@ class AnimationTest {
         assertEquals(51, stand.numFrames);
         assertTrue((stand.flags & AnimDecode.STUDIO_LOOPING) != 0, "the idle loops");
 
-        // The attack and reload animations are additive deltas, layered onto a base pose rather
-        // than played standalone.
         AnimSampler.AnimDesc attack = anims.findAnim("@AttackStand_PRIMARY");
         assertNotNull(attack);
         assertTrue((attack.flags & AnimDecode.STUDIO_DELTA) != 0,
@@ -87,7 +84,7 @@ class AnimationTest {
         assertTrue(maxZ > 60f && maxZ < 85f,
                 "head should be roughly 70 hu up, got maxZ=" + maxZ);
 
-        // 39.08, from the sequence's own bbox for this pose.
+        // 39.08 from the sequence's own bbox for this pose.
         assertEquals(39.0f, maxX, 1.5f, "forward reach of the posed arms");
     }
 
@@ -105,8 +102,6 @@ class AnimationTest {
         float[] rot = new float[86 * 4];
         sampler.sample(attack, 6, 0f, pos, rot);
 
-        // The aim/attack deltas touch the upper body only. The result is added to a base pose, so
-        // every bone the stream does not mention comes back as zero translation and unit rotation.
         int identityBones = 0;
         for (int b = 0; b < anims.bones.length; b++) {
             boolean zeroPos = Math.abs(pos[b * 3]) < 1e-4f
@@ -120,13 +115,9 @@ class AnimationTest {
         }
         assertTrue(identityBones > 40,
                 "expected most of the 86 bones to be identity in a delta, got " + identityBones
-                        + " — the delta is being seeded with the bind pose");
+                        + ": the delta is being seeded with the bind pose");
     }
 
-    /**
-     * The aim matrix hanging off the standing idle: a 3×4 grid whose columns are right/centre/left
-     * and whose rows are straight-up/up/mid/down.
-     */
     private static MdlFile.SeqDesc aimMatrix(MdlFile anims) {
         MdlFile.SeqDesc stand = anims.findSequence("stand_PRIMARY");
         assertNotNull(stand, "stand_PRIMARY must be present");
@@ -146,8 +137,7 @@ class AnimationTest {
                 new AnimSampler(new Reader(read("soldier_animations.mdl")), anims));
         MdlFile.SeqDesc aim = aimMatrix(anims);
 
-        // Rows descend 90, 45, 0, -45, so row 1 is "up", 2 is "mid" and 3 is "down". body_pitch is
-        // -eyePitch, so looking down (Minecraft xRot positive) arrives here as a negative value.
+        // Pitch rows are keyed 90, 45, 0, -45; looking down gives a negative body_pitch.
         float down = eval.resolveAxis(aim, 1, -45f);
         float mid = eval.resolveAxis(aim, 1, 0f);
         float up = eval.resolveAxis(aim, 1, 45f);
@@ -156,7 +146,7 @@ class AnimationTest {
         assertEquals(2.0f, mid, 0.05f, "body_pitch 0 must land on the mid row");
         assertEquals(1.0f, up, 0.05f, "body_pitch +45 must land on the up row");
         assertTrue(down > mid && mid > up,
-                "row index must fall as the pose value rises — if it climbs, the aim is inverted");
+                "row index must fall as the pose value rises; if it climbs, the aim is inverted");
     }
 
     @Test
@@ -167,15 +157,13 @@ class AnimationTest {
                 new AnimSampler(new Reader(read("soldier_animations.mdl")), anims));
         MdlFile.SeqDesc aim = aimMatrix(anims);
 
-        // body_yaw has loop = 360. Wrapping it without Source's shift term sends every negative
-        // value a whole period upward, where it clamps to the far column.
+        // body_yaw loops at 360 and needs Source's shift term to wrap negative values.
         float justLeft = eval.resolveAxis(aim, 0, -0.5f);
         float justRight = eval.resolveAxis(aim, 0, 0.5f);
         assertTrue(Math.abs(justLeft - justRight) < 0.05f,
                 "a 1 degree step across zero moved the aim by " + Math.abs(justLeft - justRight)
-                        + " cells — the loop wrap has lost its shift term");
+                        + " cells: the loop wrap has lost its shift term");
 
-        // The axis runs right to left, because the pose keys descend.
         assertEquals(0.0f, eval.resolveAxis(aim, 0, 45f), 0.05f, "+45 is the right column");
         assertEquals(1.0f, eval.resolveAxis(aim, 0, 0f), 0.05f, "0 is the centre column");
         assertEquals(2.0f, eval.resolveAxis(aim, 0, -45f), 0.05f, "-45 is the left column");
@@ -197,13 +185,12 @@ class AnimationTest {
                         "axis " + axis + " went backwards at " + deg + " degrees");
                 assertTrue(now - prev < 0.2f,
                         "axis " + axis + " jumped " + (now - prev) + " cells at " + deg
-                                + " degrees — that is a visible snap");
+                                + " degrees: that is a visible snap");
                 prev = now;
             }
         }
     }
 
-    /** Sum of absolute differences between two skeletons — zero means identical poses. */
     private static float poseDistance(float[] aPos, float[] aRot, float[] bPos, float[] bRot) {
         float d = 0f;
         for (int i = 0; i < aPos.length; i++) d += Math.abs(aPos[i] - bPos[i]);
@@ -219,13 +206,12 @@ class AnimationTest {
                 new AnimSampler(new Reader(read("soldier_animations.mdl")), anims));
         MdlFile.SeqDesc aim = aimMatrix(anims);
 
-        // Through applyAutoLayers, not evaluate() directly: only applyAutoLayers can hand evaluate()
-        // its own scratch arrays as output.
+        // Only applyAutoLayers may pass evaluate() its own scratch arrays as output.
         MdlFile.SeqDesc stand = anims.findSequence("stand_PRIMARY");
         assertNotNull(stand);
         assertNotNull(aim);
 
-        // Pitch rows are keyed 90/45/0/-45, so -22.5 sits halfway between the mid and down rows.
+        // -22.5 sits halfway between the mid (0) and down (-45) rows.
         float[] midPos = new float[86 * 3], midRot = new float[86 * 4];
         float[] downPos = new float[86 * 3], downRot = new float[86 * 4];
         float[] halfPos = new float[86 * 3], halfRot = new float[86 * 4];
@@ -246,9 +232,9 @@ class AnimationTest {
         float toDown = poseDistance(halfPos, halfRot, downPos, downRot);
 
         assertTrue(toMid > 0.01f * span,
-                "halfway pitch returned the mid row unchanged — the grid blend is a no-op");
+                "halfway pitch returned the mid row unchanged: the grid blend is a no-op");
         assertTrue(toDown > 0.01f * span,
-                "halfway pitch returned the down row unchanged — the grid blend is a no-op");
+                "halfway pitch returned the down row unchanged: the grid blend is a no-op");
     }
 
     @Test
@@ -261,7 +247,7 @@ class AnimationTest {
 
         float[] pos = new float[86 * 3];
         float[] rot = new float[86 * 4];
-        eval.evaluate(aim, 0f, 0f, 0f, pos, rot);   // a clean call must still work
+        eval.evaluate(aim, 0f, 0f, 0f, pos, rot);
 
         java.lang.reflect.Field f;
         try {
@@ -292,7 +278,7 @@ class AnimationTest {
         System.arraycopy(levelRot, 0, upRot, 0, levelRot.length);
 
         eval.applyAutoLayers(stand, 0f, 0f, levelPos, levelRot);
-        eval.applyAutoLayers(stand, 0f, 40f, upPos, upRot);   // body_pitch +40 = looking up
+        eval.applyAutoLayers(stand, 0f, 40f, upPos, upRot);
 
         int moved = 0, legsMoved = 0;
         MdlFile.SeqDesc layer = anims.sequences[stand.autoLayers[0].sequence];
@@ -321,8 +307,7 @@ class AnimationTest {
         assertNotNull(help, "the HANDMOUTH gesture must be present");
         assertTrue(help.autoLayers.length > 0, "it carries the left-arm layer that broke");
 
-        // The arm layer is absolute (animflags 0x0000) and belongs on the accumulator, after the
-        // gesture delta has been merged in, not on the gesture's own local buffer.
+        // The arm layer is absolute and applies to the accumulator after the gesture delta.
         int handL = -1;
         for (MdlFile.Bone b : anims.bones) {
             if (b.name.equals("bip_hand_L")) handL = b.index;
@@ -339,20 +324,20 @@ class AnimationTest {
             float[] boneToWorld = new float[86 * 12];
             Skeleton.buildMatrices(anims, pos, rot, boneToWorld);
 
-            // Measured: the hand travels x +12..+33 and no bone passes 81 hu from the origin.
+            // Measured: the hand travels x +12 to +33; no bone passes 81 hu from the origin.
             for (MdlFile.Bone b : anims.bones) {
                 int o = b.index * 12;
                 float x = boneToWorld[o + 3], y = boneToWorld[o + 7], z = boneToWorld[o + 11];
                 float d = (float) Math.sqrt(x * x + y * y + z * z);
                 assertTrue(d < 100f, String.format(
-                        "bone %s reached %.1f hu from the origin at cycle %.1f — the gesture layer "
+                        "bone %s reached %.1f hu from the origin at cycle %.1f: the gesture layer "
                                 + "is being composed in the wrong space", b.name, d, cycle));
             }
 
-            // HANDMOUTH raises the hand to the mouth, and +X is forward in Source game space.
+            // +X is forward in Source game space.
             float handX = boneToWorld[handL * 12 + 3];
             assertTrue(handX > 0f, String.format(
-                    "the left hand is %.1f hu BEHIND the body at cycle %.1f — the absolute arm "
+                    "the left hand is %.1f hu BEHIND the body at cycle %.1f: the absolute arm "
                             + "layer is being blended in delta space", handX, cycle));
         }
     }
@@ -396,7 +381,6 @@ class AnimationTest {
         assertEquals(0f, AnimDecode.float16(0x0000), 1e-9f);
         assertEquals(1f, AnimDecode.float16(0x3C00), 1e-6f);
         assertEquals(-2f, AnimDecode.float16(0xC000), 1e-6f);
-        // IEEE would give infinity here; Valve clamps to maxfloat.
         assertEquals(65504.0f, AnimDecode.float16(0x7C00), 1f);
     }
 }

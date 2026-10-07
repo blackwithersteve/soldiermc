@@ -1,13 +1,4 @@
-import os
-"""MDL/VVD/VTX dump driver and OBJ exporter.
-
-  python dump.py header      - studiohdr_t / studiohdr2_t for both MDLs
-  python dump.py bones       - the 86-bone tree, and the FK/poseToBone identity proof
-  python dump.py mesh        - bodypart/model/mesh tree, VVD fixups, per-LOD triangle counts
-  python dump.py seqs        - every sequence with activity, blend grid, frames, fps, duration
-  python dump.py key         - just the sequences a player mod needs
-  python dump.py obj <seq> <frame> <out.obj>   - skinned OBJ in Source game space
-"""
+"""Usage: python dump.py header|bones|mesh|seqs|key, or obj <seq> <frame> <out.obj>"""
 import sys, os, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mdl, vvd, vtx, anim, pose
@@ -27,8 +18,9 @@ KEY_SEQUENCES = [
 
 
 def load():
-    return (mdl.MDL(P + 'soldier.mdl'), mdl.MDL(P + 'soldier_animations.mdl'),
-            vvd.VVD(P + 'soldier.vvd'), vtx.VTX(P + 'soldier.dx90.vtx'))
+    f = lambda name: os.path.join(P, name)
+    return (mdl.MDL(f('soldier.mdl')), mdl.MDL(f('soldier_animations.mdl')),
+            vvd.VVD(f('soldier.vvd')), vtx.VTX(f('soldier.dx90.vtx')))
 
 
 def cmd_header():
@@ -133,7 +125,7 @@ def cmd_obj(seqname, frame, out):
         for mat, tris in sorted(faces.items()):
             f.write('usemtl %s\n' % S.textures[mat].replace('/', '_'))
             for (a, b, c) in tris:
-                # Source winding is clockwise; flip for OpenGL/OBJ CCW front faces
+                # Source winds clockwise; OBJ front faces are counterclockwise.
                 f.write('f %d/%d/%d %d/%d/%d %d/%d/%d\n'
                         % (a + 1, a + 1, a + 1, c + 1, c + 1, c + 1, b + 1, b + 1, b + 1))
     print('wrote', out, sum(len(t) for t in faces.values()), 'tris')

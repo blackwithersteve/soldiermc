@@ -10,7 +10,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Cancels {@code Player.travel} for the local player so the ported Source simulation moves him. */
 @Mixin(Player.class)
 public abstract class PlayerTravelMixin {
 
@@ -20,7 +19,6 @@ public abstract class PlayerTravelMixin {
     private void soldiermc$sourceTravel(Vec3 input, CallbackInfo ci) {
         if (!((Object) this instanceof LocalPlayer local)) return;
 
-        // Bail out to vanilla for states the port does not model.
         if (local.isSpectator() || local.isPassenger() || local.getAbilities().flying
                 || local.isInWater() || local.isInLava() || local.onClimbable()) {
             return;
@@ -30,7 +28,7 @@ public abstract class PlayerTravelMixin {
             if (!soldiermc$announced) {
                 soldiermc$announced = true;
                 SoldierMC.LOGGER.info(
-                        "PlayerTravelMixin applied - Source physics has the local player");
+                        "PlayerTravelMixin applied: Source physics has the local player");
             }
             ci.cancel();
         }

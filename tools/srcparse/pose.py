@@ -36,8 +36,7 @@ def rotate(m, v):
 
 
 def bone_world(bones, local_pose):
-    """local_pose: {bone index: (pos, quat)}; missing bones fall back to the MDL bind
-    pose. Source MDLs store bones parent-before-child, so one forward pass is enough."""
+    """Missing bones use the bind pose; MDL bones are stored parent before child."""
     w = {}
     for b in bones:
         i = b['index']
@@ -48,12 +47,10 @@ def bone_world(bones, local_pose):
 
 
 def skinning_matrices(bones, world):
-    """boneMatrix * poseToBone -- what a vertex is multiplied by."""
     return {b['index']: mul34(world[b['index']], b['poseToBone']) for b in bones}
 
 
 def skin(verts, skm):
-    """Linear blend skin. Returns list of (pos, normal) in model space."""
     out = []
     for v in verts:
         px = py = pz = nx = ny = nz = 0.0
@@ -69,10 +66,7 @@ def skin(verts, skm):
     return out
 
 
-# ---- delta layering
-# Sequences with STUDIO_DELTA (seqdesc.flags & 0x0004) are additive, not absolute: every
-# ACT_MP_ATTACK_*, ACT_MP_RELOAD_*, ACT_MP_GESTURE_* and every "layer_*". Source layers
-# them in SlerpBones():   pos1 += s * pos2 ;  q1 = QuaternionMA(q1, s, q2)
+# STUDIO_DELTA (flags & 0x0004) sequences are additive, layered as in SlerpBones().
 
 def quat_normalize(q):
     n = math.sqrt(sum(c * c for c in q)) or 1.0
@@ -80,7 +74,7 @@ def quat_normalize(q):
 
 
 def quat_mult(p, q):
-    # Source QuaternionMult: if p.w < 0 it flips q first
+    # As in QuaternionMult, q is first aligned to p's hemisphere.
     if p[3] * q[3] + p[0] * q[0] + p[1] * q[1] + p[2] * q[2] < 0:
         q = tuple(-c for c in q)
     px, py, pz, pw = p
@@ -92,8 +86,7 @@ def quat_mult(p, q):
 
 
 def quat_scale(q, s):
-    """Port of QuaternionScale(): raises the rotation to the power s, scaling the angle
-    and keeping the axis."""
+    """QuaternionScale(): scales the rotation angle by s, keeping the axis."""
     x, y, z, w = q
     sinom = math.sqrt(x * x + y * y + z * z)
     sinom = min(sinom, 1.0)
@@ -116,8 +109,7 @@ def quat_ma(p, s, q):
 
 
 def apply_delta(base_local, delta_local, s, bones, weights=None):
-    """base_local / delta_local: {bone: (pos, quat)} from sample_frame(). `weights` is the
-    per-bone weight list (mstudioseqdesc_t.weightlistindex); None means a flat 1.0."""
+    """`weights` is the sequence's per-bone weight list; None means 1.0 for every bone."""
     out = dict(base_local)
     for b in bones:
         i = b['index']
@@ -134,7 +126,6 @@ def apply_delta(base_local, delta_local, s, bones, weights=None):
 
 
 def seq_bone_weights(mdlobj, seqdesc):
-    """float weight[numbones] at seqdesc.off + weightlistindex."""
     import struct
     n = len(mdlobj.bones)
     return list(struct.unpack_from('<%df' % n, mdlobj.b,

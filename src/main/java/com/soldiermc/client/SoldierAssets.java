@@ -21,12 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 
-/**
- * Loads the Soldier's mesh and textures once, at runtime, from the gitignored
- * {@code tf2-assets-staging/} — nothing extracted from TF2 ships in the jar. If an asset is missing
- * or a gate fails, {@link #ready()} stays false, the render mixin does not cancel, and vanilla Steve
- * appears with one warning in the log.
- */
+/** Reads TF2 assets from tf2-assets-staging at runtime; none ship in the jar. */
 public final class SoldierAssets {
 
     private static boolean attempted;
@@ -43,7 +38,6 @@ public final class SoldierAssets {
     private static Identifier bodyTex;
     private static Identifier headTex;
 
-    /** Diagnostics the overlay prints. */
     private static String summary = "not loaded";
 
     private SoldierAssets() {
@@ -75,15 +69,12 @@ public final class SoldierAssets {
 
     private static MdlFile.SeqDesc jumpLand;
 
-    /** Gesture sequences, resolved by name once at load. */
     private static final java.util.Map<String, MdlFile.SeqDesc> GESTURES = new java.util.HashMap<>();
 
-    /** A gesture sequence by name, or null if absent or the name is null. */
     public static MdlFile.SeqDesc gesture(String name) {
         return name == null ? null : GESTURES.get(name);
     }
 
-    /** {@code @jumpland_PRIMARY}, the landing gesture. Null if the model lacks it. */
     public static MdlFile.SeqDesc jumpLand() {
         return jumpLand;
     }
@@ -109,7 +100,6 @@ public final class SoldierAssets {
         return failure;
     }
 
-    /** Idempotent. Safe to call from any client tick. */
     public static synchronized void ensureLoaded() {
         if (attempted) return;
         attempted = true;
@@ -138,13 +128,12 @@ public final class SoldierAssets {
 
         model = new StudioModel(mdl, vvd, vtx, 0);
 
-        // The animation MDL carries the same 86-bone skeleton but a different checksum, so it is
-        // excluded from the three-way mesh check above.
+        // The animation MDL has its own checksum, so only its bone count is compared.
         byte[] animBytes = Files.readAllBytes(models.resolve("soldier_animations.mdl"));
         animMdl = new MdlFile(animBytes);
         if (animMdl.bones.length != mdl.bones.length) {
             throw new IOException("animation skeleton has " + animMdl.bones.length
-                    + " bones, mesh has " + mdl.bones.length + " — they must match");
+                    + " bones, mesh has " + mdl.bones.length + ": they must match");
         }
         sampler = new AnimSampler(new Reader(animBytes), animMdl);
         idle = animMdl.findAnim("@stand_PRIMARY");
@@ -172,7 +161,7 @@ public final class SoldierAssets {
 
         jumpLand = animMdl.findSequence("jumpland_PRIMARY");
         if (jumpLand == null) {
-            SoldierMC.LOGGER.warn("[soldiermc] jumpland_PRIMARY missing - landings will hard-cut");
+            SoldierMC.LOGGER.warn("[soldiermc] jumpland_PRIMARY missing, landings will hard-cut");
         }
         if (SEQS.get(com.soldiermc.animstate.TfAnimState.Activity.STAND_IDLE) == null) {
             throw new IOException("stand_PRIMARY sequence missing");
@@ -199,7 +188,6 @@ public final class SoldierAssets {
         SEQS.put(a, sd);
     }
 
-    /** The staging directory, or null if it cannot be found. Used by the audio pack builder. */
     public static Path stagingDir() {
         try {
             return locateStaging();
@@ -218,7 +206,7 @@ public final class SoldierAssets {
             if (p != null && Files.isDirectory(p.resolve("models/player"))) return p;
         }
         throw new IOException("tf2-assets-staging/models/player not found near " + gameDir
-                + " — extract with tools/extract-tf2-assets.ps1");
+                + "; extract with tools/extract-tf2-assets.ps1");
     }
 
     private static Identifier registerTexture(Path png, String name) throws IOException {

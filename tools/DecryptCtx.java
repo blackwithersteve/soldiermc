@@ -1,12 +1,4 @@
-// Decrypts TF2's scripts/tf_weapon_*.ctx: KeyValues run through Kwan's ICE cipher at
-// level 0 (8-byte key, 8-byte block, 8 rounds), key "E2NcUkG2" - source-sdk-2013
-// src/game/shared/tf/tf_shareddefs.cpp:1614. Whole 8-byte blocks only, trailing
-// remainder left as-is (src/game/shared/util_shared.cpp:993 UTIL_DecodeICE).
-//
-//   java DecryptCtx.java in.ctx [out.txt]
-//   java DecryptCtx.java scripts\*.ctx            (writes <name>.txt beside each)
-//
-// Requires JDK 11+ (single-file source launch).
+// Decrypts TF2 .ctx scripts. Usage: java DecryptCtx.java in.ctx [out.txt]
 
 import java.io.IOException;
 import java.nio.file.*;
@@ -31,7 +23,6 @@ public class DecryptCtx {
         }
     }
 
-    /** Kwan's ICE block cipher. level 0 == "Thin ICE": 64-bit key, 8 rounds. */
     static final class IceKey {
         private static final int[][] S_MOD = {
             {333, 313, 505, 369}, {379, 375, 319, 391},
@@ -114,10 +105,10 @@ public class DecryptCtx {
 
         private static int gfExp7(int b, int m) {
             if (b == 0) return 0;
-            int x = gfMult(b, b, m);      // b^2
-            x = gfMult(b, x, m);          // b^3
-            x = gfMult(x, x, m);          // b^6
-            return gfMult(b, x, m);       // b^7
+            int x = gfMult(b, b, m);
+            x = gfMult(b, x, m);
+            x = gfMult(x, x, m);
+            return gfMult(b, x, m);
         }
 
         private static int perm32(int x) {
@@ -142,7 +133,7 @@ public class DecryptCtx {
                  | SP_BOX[2][ar >>> 10] | SP_BOX[3][ar & 0x3ff];
         }
 
-        /** Decrypts whole 8-byte blocks; a trailing partial block is left untouched. */
+        /** A trailing partial block is left untouched, as in UTIL_DecodeICE. */
         void decryptInPlace(byte[] buf) {
             for (int off = 0; off + 8 <= buf.length; off += 8) {
                 int l = 0, r = 0;

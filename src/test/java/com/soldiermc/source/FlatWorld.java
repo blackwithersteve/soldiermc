@@ -1,9 +1,8 @@
 package com.soldiermc.source;
 
-/** A world that is solid below z = 0 and empty above it. */
+/** Solid below z = 0 and, when wallX is set, beyond x = wallX. */
 public final class FlatWorld implements WorldQuery {
 
-    /** Optional vertical wall at x = wallX, for the slide canary. */
     public float wallX = Float.POSITIVE_INFINITY;
 
     @Override
@@ -15,7 +14,6 @@ public final class FlatWorld implements WorldQuery {
         float bestFraction = 1.0f;
         float nx = 0f, ny = 0f, nz = 0f;
 
-        // --- floor at z = 0 ---
         if (toZ < 0f && fromZ >= 0f) {
             float f = (0f - fromZ) / (toZ - fromZ);
             if (f < bestFraction) {
@@ -27,7 +25,6 @@ public final class FlatWorld implements WorldQuery {
             out.allSolid = toZ < 0f;
         }
 
-        // --- optional wall, plane x = wallX, normal -X ---
         if (wallX != Float.POSITIVE_INFINITY && toX > wallX && fromX <= wallX) {
             float f = (wallX - fromX) / (toX - fromX);
             if (f < bestFraction) {
@@ -47,7 +44,6 @@ public final class FlatWorld implements WorldQuery {
         }
     }
 
-    /** A zero-width line trace against the same two planes the hull trace uses. */
     @Override
     public void traceLineBrush(TraceResult out,
                                float fromX, float fromY, float fromZ,
@@ -77,7 +73,6 @@ public final class FlatWorld implements WorldQuery {
         }
     }
 
-    /** No entities in the flat world, so this is the brush trace. */
     @Override
     public void traceLineSolid(TraceResult out, int ignoreEntityId,
                                float fromX, float fromY, float fromZ,

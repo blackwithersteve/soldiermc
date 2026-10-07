@@ -12,13 +12,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.player.Input;
 import net.minecraft.world.phys.Vec3;
 
-/**
- * Drives the ported simulation from Minecraft's client tick and writes the result back onto the
- * player; the engine owns position and velocity. Axis mapping lives in {@link Units}:
- * {@code mx = ex, my = ez, mz = -ey} with {@code sourceYaw = -mcYaw - 90}, a rotation rather than
- * the reflection {@code (ex, ey, ez) -> (ex, ez, ey)}, which flips handedness and swaps A and D.
- * Pitch shares its sign, positive down in both.
- */
+/** The engine owns position and velocity; the Minecraft player only mirrors them. */
 public final class SoldierMovement {
 
     private static final McWorldQuery WORLD = new McWorldQuery();
@@ -34,7 +28,6 @@ public final class SoldierMovement {
     private static float peakVelZ;
     private static volatile boolean jumped;
 
-    /** Consume the one-shot jump edge. */
     public static boolean consumeJumpEdge() {
         if (!jumped) return false;
         jumped = false;
@@ -44,12 +37,7 @@ public final class SoldierMovement {
     private SoldierMovement() {
     }
 
-    // ---- per-frame input ----
-
-    /**
-     * Record one rendered frame's input. Called from the {@code MouseHandler} mixin just after
-     * Minecraft flushes mouse movement; sampling per tick instead caps the air-strafe gain at 20 Hz.
-     */
+    /** Per frame, after the mouse flush; per tick would cap air-strafe gain at 20 Hz. */
     public static void sampleFrame(LocalPlayer player) {
         if (player == null) return;
 
@@ -59,7 +47,7 @@ public final class SoldierMovement {
         if (keys.forward()) forward += SourceFeel.CL_FORWARDSPEED;
         if (keys.backward()) forward -= SourceFeel.CL_BACKSPEED;
 
-        // Source's +Y is left, so the left key produces a negative sideMove.
+        // sideMove is positive to the right, though Source's +Y axis points left.
         float side = 0f;
         if (keys.left()) side -= SourceFeel.CL_SIDESPEED;
         if (keys.right()) side += SourceFeel.CL_SIDESPEED;
@@ -68,8 +56,6 @@ public final class SoldierMovement {
         if (keys.jump()) buttons |= Buttons.IN_JUMP;
         if (keys.shift()) buttons |= Buttons.IN_DUCK;
 
-        // Sampled per frame, so a click between two Minecraft ticks lands on the substep it
-        // happened on.
         var mc = net.minecraft.client.Minecraft.getInstance();
         if (mc.options.keyAttack.isDown()) buttons |= Buttons.IN_ATTACK;
         if (mc.options.keyUse.isDown()) buttons |= Buttons.IN_ATTACK2;
@@ -81,14 +67,7 @@ public final class SoldierMovement {
                 forward, side, buttons);
     }
 
-    // ---- per-tick simulation ----
-
-    /**
-     * Run this Minecraft tick's Source substeps. Called from {@code Player#travel}, which is
-     * cancelled so vanilla locomotion never runs.
-     *
-     * @return true if the simulation handled movement
-     */
+    /** Returns true when the engine moved the player and vanilla travel must not run. */
     public static boolean travel(LocalPlayer player) {
         if (!active) return false;
 
@@ -110,7 +89,6 @@ public final class SoldierMovement {
         MV.maxSpeed = SourceFeel.TF_MAX_SPEED;
 
         for (int i = 0; i < substeps; i++) {
-            // Newest sample for the last substep, walking back for earlier ones.
             int back = substeps - 1 - i;
             if (RING.sampleFromEnd(back, SAMPLE)) {
                 MV.viewPitch = SAMPLE.pitch;
@@ -123,19 +101,12 @@ public final class SoldierMovement {
 
             boolean wasGrounded = SIM.onGround();
             SIM.processMovement(MV);
-            // A ground->air transition with upward velocity is the jump, and it is only visible at
-            // substep resolution.
             if (wasGrounded && !SIM.onGround() && MV.velZ > 0f) jumped = true;
 
-            // Order: movement, then rockets, then the weapon, matching Source's ProcessMovement,
-            // then PostThink -> ItemPostFrame, then entity physics — which gives a new rocket a
-            // one-substep head start. The FL_ONGROUND the blast reads is the one this substep's
-            // categorizePosition wrote.
+            // Rockets step after movement, so a blast reads this substep's ground flag.
             stepRockets();
             WEAPON.runCommand(t, MV.buttons, AMMO, SINK, MV, SIM.ducked());
 
-            // Sampled after the blast impulse, not straight after processMovement, where
-            // startGravity and finishGravity have already taken 12 hu/s off the launch.
             if (MV.velZ > peakVelZ) peakVelZ = MV.velZ;
         }
 
@@ -146,7 +117,6 @@ public final class SoldierMovement {
         return true;
     }
 
-    /** Adopt the player's current Minecraft state into the simulation. */
     private static void seedFrom(LocalPlayer player) {
         Vec3 pos = player.position();
         MV.originX = Units.hu(pos.x);
@@ -160,14 +130,13 @@ public final class SoldierMovement {
 
         MV.oldButtons = 0;
         SIM.reset(player.onGround());
-        PUMP.reset(System.nanoTime());
+        PUMP.reset();
     }
 
-    /** Copy the simulation's answer onto the entity. The engine's origin is authoritative. */
     private static void writeBack(LocalPlayer player) {
         player.setPos(Units.blocks(MV.originX), Units.blocks(MV.originZ), Units.engineYToMcZ(MV.originY));
 
-        // Vanilla reads deltaMovement for animation, fall damage and the network position delta.
+        // Vanilla reads deltaMovement for animation, fall damage and network deltas.
         player.setDeltaMovement(
                 Units.velToMc(MV.velX),
                 Units.velToMc(MV.velZ),
@@ -176,16 +145,13 @@ public final class SoldierMovement {
         player.setOnGround(SIM.onGround());
     }
 
-    // ---- control + readouts ----
-
     public static void setActive(boolean on) {
         if (active == on) return;
         active = on;
         seeded = false;
         if (!on) RING.clear();
 
-        // getEyeHeight() reads a cached field written only by refreshDimensions(), so the eye-height
-        // mixin does nothing until this runs — in both directions, 1.62 vanilla and 1.4927 TF2.
+        // Eye height is cached until refreshDimensions, so the eye-height mixin needs this.
         LocalPlayer p = net.minecraft.client.Minecraft.getInstance().player;
         if (p != null) p.refreshDimensions();
     }
@@ -194,17 +160,10 @@ public final class SoldierMovement {
         return active;
     }
 
-    /** Re-seed on the next tick — spawn, teleport, dimension change. */
-    public static void invalidate() {
-        seeded = false;
-    }
-
-    /** Add an impulse in hu/s. Velocity only — the ground flag belongs to categorizePosition. */
+    /** Impulse in hu/s; velocity only, the ground flag is left to categorizePosition. */
     public static void addImpulse(float x, float y, float z) {
         SIM.applyAbsVelocityImpulse(MV, x, y, z);
     }
-
-    // ---- the rocket launcher ----
 
     private static final com.soldiermc.source.TFWeaponGun WEAPON =
             new com.soldiermc.source.TFWeaponGun(
@@ -216,7 +175,6 @@ public final class SoldierMovement {
     private static final java.util.List<com.soldiermc.source.RocketFlight> ROCKETS =
             new java.util.ArrayList<>();
 
-    /** The local player's own id, so his rocket cannot hit him. -1 until the first tick. */
     private static int shooterId = -1;
 
     private static float lastBlastDamage;
@@ -229,18 +187,13 @@ public final class SoldierMovement {
         AMMO.set(com.soldiermc.source.TfAmmo.PRIMARY, 20);
     }
 
-    /**
-     * Runs the {@code FireRocket} setup and puts a rocket in the air. The rocket is simulated
-     * entirely inside the ported engine; Minecraft is not asked to move it.
-     */
     private static final com.soldiermc.source.ProjectileSink SINK =
             new com.soldiermc.source.ProjectileSink() {
                 @Override
                 public void fireRocket(float curtime, com.soldiermc.source.MoveData mv,
                                        boolean ducked, boolean critical) {
                     var spawn = new com.soldiermc.source.RocketSpawn();
-                    // TF2 cannot look past 89 degrees (cl_pitchdown is FCVAR_CHEAT); Minecraft
-                    // clamps to 90, so the port clamps here.
+                    // TF2 pitch stops at 89 degrees; Minecraft allows 90.
                     float pitch = Math.max(-SourceFeel.PITCH_CLAMP,
                             Math.min(SourceFeel.PITCH_CLAMP, mv.viewPitch));
                     FIRE.fireRocket(WORLD, mv.originX, mv.originY, mv.originZ,
@@ -257,7 +210,6 @@ public final class SoldierMovement {
                 }
             };
 
-    /** Advance every live rocket one substep and apply any blast it produces. */
     private static void stepRockets() {
         for (int k = ROCKETS.size() - 1; k >= 0; k--) {
             var r = ROCKETS.get(k);
@@ -266,8 +218,7 @@ public final class SoldierMovement {
             if (!detonated) {
                 var lvl = net.minecraft.client.Minecraft.getInstance().level;
                 if (lvl != null) SoldierParticles.trail(r.x, r.y, r.z, lvl.getGameTime());
-                // TF2 has no lifetime and no range limit; rockets are removed by leaving the world.
-                // Leaving the loaded world is the port's substitute, not a TF2 value.
+                // TF2 rockets never expire; leaving the loaded world stands in for the map edge.
                 if (WORLD.outsideLoadedWorld(r.x, r.y, r.z)) ROCKETS.remove(k);
                 continue;
             }
@@ -328,10 +279,6 @@ public final class SoldierMovement {
         return MV.velZ;
     }
 
-    /**
-     * The highest velZ seen inside a substep since the last {@link #clearPeakVelZ()}. Invisible from
-     * a per-tick sample, where the remaining substeps have already applied gravity.
-     */
     public static float peakVelZ() {
         return peakVelZ;
     }
@@ -369,7 +316,6 @@ public final class SoldierMovement {
         return PUMP.lastDropped();
     }
 
-    /** Fresh input samples in the last second — the live R that sets the air-strafe gain rate. */
     public static int freshInputRate() {
         return lastFreshRate;
     }

@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The locomotion state machine, driven headlessly with no Minecraft classes involved. */
 class AnimStateTest {
 
     private static final float DT = 0.015f;          // SourceFeel.DT
@@ -24,7 +23,7 @@ class AnimStateTest {
     }
 
     @Test
-    @DisplayName("playback rate is always 1 — TF2 is a 9-way blend and scales stride, not cadence")
+    @DisplayName("playback rate is always 1: TF2 is a 9-way blend and scales stride, not cadence")
     void playbackRateIsAlwaysOne() {
         TfAnimState anim = new TfAnimState();
         float now = 0f;
@@ -32,7 +31,7 @@ class AnimStateTest {
             now += DT;
             step(anim, speed, now);
             assertEquals(1.0f, anim.playbackRate(), 0f,
-                    "base_playeranimstate.cpp:545 — with a 9-way blend the rate is always 1");
+                    "with a 9-way blend the rate is always 1");
         }
     }
 
@@ -55,13 +54,13 @@ class AnimStateTest {
             if (anim.activity() != TfAnimState.Activity.RUN) break;
             float c = anim.cycle();
             float d = c - prev;
-            if (d < 0f) d += 1f;                       // the cycle wrapped
+            if (d < 0f) d += 1f;
             total += d;
             prev = c;
             steps++;
         }
 
-        // Every step advances the clip by the same dt/0.7, because the rate is pinned to 1.
+        // The run clip lasts 0.7 s and the rate is pinned to 1.
         float expectedPerStep = DT / 0.7f;
         assertEquals(expectedPerStep * steps, total, 1e-3f,
                 "the run clip must advance at a constant cadence while decelerating");
@@ -83,8 +82,6 @@ class AnimStateTest {
             now += DT;
             step(anim, speed, now);
             if (anim.activity() != TfAnimState.Activity.RUN) {
-                // The outgoing run layer keeps advancing while it fades. Source's transitioner
-                // stores the playback rate at the moment of the change, and for TF that is 1.
                 float afterFlip = anim.prevCycle();
                 float outgoingRate = afterFlip - prevCycle;
                 if (outgoingRate < 0f) outgoingRate += 1f;
@@ -104,7 +101,6 @@ class AnimStateTest {
     void activityChangeDoesNotRestartTheCycle() {
         TfAnimState anim = new TfAnimState();
         float now = 0f;
-        // Run long enough to be well inside the clip.
         for (int i = 0; i < 20; i++) {
             now += DT;
             step(anim, 240f, now);
@@ -113,15 +109,13 @@ class AnimStateTest {
         assertTrue(running > 0.1f, "precondition: mid-clip, got " + running);
 
         now += DT;
-        step(anim, 0f, now);          // stop dead
+        step(anim, 0f, now);
         assertEquals(TfAnimState.Activity.STAND_IDLE, anim.activity());
 
-        // ResetSequence is SetSequence + ResetSequenceInfo on the client — it never writes the
-        // cycle. Only RestartMainSequence does, and run<->idle is not one of its call sites.
+        // ResetSequence never writes the cycle, so it carries over from run to idle.
         assertEquals(running + DT / 1.6667f, anim.cycle(), 1e-3f,
                 "the cycle must carry over into the idle, not restart at 0");
-        // prevCycle is captured before the flip frame's advance and then advanced once by the
-        // cross-fade in that same frame, so it sits exactly one run-step past the displayed pose.
+        // The cross-fade advances prevCycle by one run step in the flip frame.
         assertEquals(running + DT / 0.7f, anim.prevCycle(), 1e-3f,
                 "the outgoing layer starts from the pose actually being displayed");
     }
@@ -134,7 +128,6 @@ class AnimStateTest {
         step(anim, 0f, now);
 
         anim.onJump(now);
-        // Airborne for a while so the jump clip is well into its cycle.
         for (int i = 0; i < 30; i++) {
             now += DT;
             anim.update(0f, 200f, false, false, 0f, 0f, 0f, now, DT, RUN_BOX_EDGE, CROUCH_BOX_EDGE);
@@ -142,21 +135,20 @@ class AnimStateTest {
         float airborneCycle = anim.cycle();
         assertTrue(airborneCycle > 0.05f, "precondition: mid-clip, got " + airborneCycle);
 
-        // Touch down. TF2 zeroes the main cycle here, and the cross-fade must not read that zero.
+        // TF2 zeroes the main cycle on touchdown; the cross-fade must not read that zero.
         now += DT;
         anim.update(0f, 0f, true, false, 0f, 0f, 0f, now, DT, RUN_BOX_EDGE, CROUCH_BOX_EDGE);
 
         assertEquals(airborneCycle, anim.prevCycle(), DT / 0.7f + 1e-3f,
                 "the outgoing layer must start from the pose that was actually on screen");
         assertTrue(anim.prevCycle() > 0.05f,
-                "prevCycle came back as " + anim.prevCycle() + " — it read the zeroed cycle");
+                "prevCycle came back as " + anim.prevCycle() + ": it read the zeroed cycle");
     }
 
     @Test
     @DisplayName("both touchdown paths fire the land gesture, crouched and not")
     void bothLandingPathsFireTheGesture() {
-        // An uncrouched rocket jump exceeds velZ > 300 and lands through the AIRWALK exit; a
-        // crouched one fails that branch's !ducked gate and lands through the JUMP exit.
+        // Uncrouched above 300 velZ lands via AIRWALK; crouched lands via JUMP.
         TfAnimState airwalk = new TfAnimState();
         float now = 0f;
         step(airwalk, 0f, now);
@@ -197,8 +189,7 @@ class AnimStateTest {
         anim.update(0f, 0f, true, false, 0f, 0f, 0f, now, DT, RUN_BOX_EDGE, CROUCH_BOX_EDGE);
         assertTrue(anim.landActive());
 
-        // @jumpland_PRIMARY is 31 frames at 30 fps, exactly 1.0 s, and ANIM_LAYER_AUTOKILL retires
-        // it at cycle 1. The clip's delta is identity at both ends, so there is no ramp.
+        // @jumpland_PRIMARY is 31 frames at 30 fps, so exactly 1 s.
         int steps = 0;
         while (anim.landActive() && steps < 500) {
             now += DT;
@@ -213,11 +204,9 @@ class AnimStateTest {
     void standingTurnStopsFortyFiveDegreesShort() {
         TfAnimState anim = new TfAnimState();
         float now = 0f;
-        step(anim, 0f, now);                       // initialises the feet to the view
+        step(anim, 0f, now);
 
-        // Snap the view 180 degrees and hold it, standing still. ComputePoseParam_AimYaw steps
-        // m_flGoalFeetYaw by 45 degrees only while the delta exceeds 45, so the goal lands 45 short
-        // and stays there; TF2 has no mp_facefronttime to unwind it.
+        // Feet yaw steps by 45 only while the delta exceeds 45, so it stops 45 short.
         for (int i = 0; i < 400; i++) {
             now += DT;
             anim.update(0f, 0f, true, false, 180f, 0f, 180f, now, DT, RUN_BOX_EDGE, CROUCH_BOX_EDGE);
@@ -235,13 +224,12 @@ class AnimStateTest {
         TfAnimState anim = new TfAnimState();
         float now = 0f;
         step(anim, 0f, now);
-        for (int i = 0; i < 400; i++) {          // build up the standing 45 degree offset
+        for (int i = 0; i < 400; i++) {
             now += DT;
             anim.update(0f, 0f, true, false, 180f, 0f, 180f, now, DT, RUN_BOX_EDGE, CROUCH_BOX_EDGE);
         }
         assertTrue(Math.abs(anim.poseBodyYaw()) > 40f, "precondition: torso is twisted");
 
-        // The feet match the eye direction while moving; the move yaw carries the rest.
         for (int i = 0; i < 200; i++) {
             now += DT;
             anim.update(240f, 0f, true, false, 180f, 0f, 180f, now, DT, RUN_BOX_EDGE, CROUCH_BOX_EDGE);

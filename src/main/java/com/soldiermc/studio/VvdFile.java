@@ -3,11 +3,6 @@ package com.soldiermc.studio;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Source {@code .vvd} — the vertex array. Verified against {@code soldier.vvd}, IDSV version 4. The
- * array on disk is in the order studiomdl emitted it; the order VTX strip indices address is the
- * fixed-up order, so the fixup table has to be applied whenever {@code numFixups > 0}.
- */
 public final class VvdFile {
 
     private static final int VERTEX_SIZE = 48;
@@ -19,7 +14,6 @@ public final class VvdFile {
     public final int[] numLODVertexes = new int[8];
     public final int numFixups;
 
-    /** Vertices in on-disk order — {@link #verticesForLod} applies the fixup remap. */
     private final Vertex[] raw;
     private final int[][] fixups;   // {lod, sourceVertexID, numVertexes}
 
@@ -27,7 +21,7 @@ public final class VvdFile {
         Reader r = new Reader(bytes);
 
         int id = r.i32At(0);
-        if (id != 0x56534449) {   // 'I','D','S','V' read little-endian
+        if (id != 0x56534449) {   // 'IDSV' little-endian
             throw new IllegalArgumentException("not a VVD (bad magic)");
         }
         version = r.i32At(4);
@@ -75,12 +69,7 @@ public final class VvdFile {
         return v;
     }
 
-    /**
-     * The vertex list in the order VTX strip indices address, for one LOD: walk the fixup table in
-     * order and copy the run {@code [sourceVertexID, +numVertexes)} for every fixup whose
-     * {@code lod >= lod}. A fixup's {@code lod} field means "present in LODs 0..lod", so the test is
-     * {@code >=}, not {@code ==}.
-     */
+    /** A fixup with lod n covers LODs 0..n, so the test is >= rather than ==. */
     public List<Vertex> verticesForLod(int lod) {
         List<Vertex> out = new ArrayList<>();
         if (numFixups == 0) {
@@ -99,7 +88,7 @@ public final class VvdFile {
         return raw.length;
     }
 
-    /** {@code mstudiovertex_t} — position and normal in FILE space (Y-up), not game space. */
+    /** Position and normal are in file space (Y-up), not game space. */
     public static final class Vertex {
         public float weight0, weight1, weight2;
         public byte bone0, bone1, bone2;

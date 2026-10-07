@@ -12,7 +12,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.resources.Identifier;
 
-/** Debug overlay printing measured values beside their expected ones. Toggled by a keybind. */
 public final class SoldierDiagnostics {
 
     private static final int TEXT = 0xFFFFFFFF;
@@ -20,34 +19,21 @@ public final class SoldierDiagnostics {
     private static final int GOOD = 0xFF70FF70;
     private static final int BAD = 0xFFFF6060;
 
-    // ---- expected values ----
-
-    /** Ground speed, hu/s: the class max. */
     private static final float EXPECT_GROUND_SPEED = 240.0f;
 
-    /**
-     * Peak velZ inside the jump substep: 289 minus three half-steps of gravity — StartGravity,
-     * FinishGravity inside CheckJumpButton, FinishGravity again at the end of FullWalkMove.
-     */
+    /** 289 minus three half-steps of gravity, all applied within the jump substep. */
     private static final float EXPECT_LAUNCH_VZ = 271.0f;
 
-    /** Apex of a plain jump, hu. */
     private static final float EXPECT_APEX_HU = 50.04f;
 
     /** PreventBunnyJumping clamps the 3D velocity to 1.2 x 240 on every ground jump. */
     private static final float EXPECT_BUNNY_CAP = 288.0f;
 
-    /**
-     * A grounded stand-and-shoot rocket jump into a flat floor. Not the 448 reference tables quote:
-     * the muzzle sits 12.37 hu off the player's axis, so the rocket detonates 12.13 hu away and
-     * falloff takes 4.5 damage off before the force is computed.
-     */
+    /** Not 448: the muzzle is 12.37 hu off axis, so falloff removes 4.5 damage first. */
     private static final float EXPECT_GROUNDED_BLAST_FORCE = 427.44f;
 
-    /** {@code tf_weaponbase.h:63-66}. */
     private static final String[] RELOAD_MODES = {"idle", "reload start", "reloading", "reload end"};
 
-    // ---- live state ----
     private static float peakSpeed;
     private static float lastApexHu;
     private static float bestApexHu;
@@ -90,7 +76,7 @@ public final class SoldierDiagnostics {
         }
 
         if (!airborne && wasAirborne) {
-            // landed: freeze lastApexHu until the next takeoff
+            // Landed: lastApexHu holds until the next takeoff.
         } else if (!airborne) {
             lastApexHu = Math.max(lastApexHu, 0f);
         }
@@ -99,7 +85,7 @@ public final class SoldierDiagnostics {
 
     private static void render(GuiGraphicsExtractor g, DeltaTracker delta) {
         final Minecraft mc = Minecraft.getInstance();
-        // F1 already suppresses the whole HUD layer stack, so there is no hideGui check.
+        // F1 already hides the whole HUD layer stack, so no hideGui check is needed.
         if (mc.player == null || !SoldierClient.diagnostics()) return;
 
         final boolean on = SoldierMovement.isActive();
@@ -107,7 +93,7 @@ public final class SoldierDiagnostics {
         int y = 4;
         y = line(g, mc, y, "SOURCE PHYSICS " + (on ? "ON" : "off"), on ? GOOD : DIM);
         if (!on) {
-            line(g, mc, y, "vanilla movement - P to re-enable", DIM);
+            line(g, mc, y, "vanilla movement (P to re-enable)", DIM);
             return;
         }
 
@@ -139,7 +125,6 @@ public final class SoldierDiagnostics {
 
         y = line(g, mc, y, fmt("airtime  %7d tk   (%.2f s)", lastAirTicks, lastAirTicks / 20.0f), TEXT);
 
-        // R is the input rate, which sets the air-strafe gain ceiling.
         int r = SoldierMovement.freshInputRate();
         y = line(g, mc, y, fmt("substeps %7d      (4/3/3%s)",
                 SoldierMovement.lastSubstepCount(),
@@ -151,15 +136,11 @@ public final class SoldierDiagnostics {
 
         y = line(g, mc, y, fmt("scale    %7.4f hu/blk", SourceFeel.UNITS_PER_BLOCK), DIM);
 
-        // A frozen cycle means the animation clock is dead, not the decoder.
         String act = SoldierBody.lastActivity();
         y = line(g, mc, y, fmt("anim     %-12s cycle %.2f  rate %.2f",
                 act, SoldierBody.lastCycle(), SoldierBody.lastRate()),
                 "-".equals(act) ? DIM : GOOD);
 
-        // eye is the absolute look yaw in Source degrees, feet is the model's own rotation, body_*
-        // are the aim matrix's pose parameters: body_yaw is eye-minus-feet negated, body_pitch is
-        // negative when looking down.
         y = line(g, mc, y, fmt("aim yaw  eye %7.1f  feet %7.1f  body %6.1f",
                 SoldierBody.lastEyeYaw(), SoldierBody.lastFeetYaw(), SoldierBody.lastBodyYaw()),
                 TEXT);
@@ -168,21 +149,17 @@ public final class SoldierDiagnostics {
                 mc.player.getXRot(), bp,
                 bp > 5f ? "up" : bp < -5f ? "down" : "level"), TEXT);
 
-        // ---- the rocket launcher ----
         y = line(g, mc, y, fmt("clip     %4d / 4   reserve %2d   %-18s live %d",
                 SoldierMovement.clip(), SoldierMovement.reserveAmmo(),
                 RELOAD_MODES[Math.min(SoldierMovement.reloadMode(), 3)],
                 SoldierMovement.liveRockets()), TEXT);
 
-        // The muzzle throws the rocket 12 hu off axis, so a shot at your own feet never detonates
-        // on the axis and never reaches a reference table's 448.
         float f = SoldierMovement.lastBlastForce();
         y = line(g, mc, y, fmt("blast    d %5.1f hu  dmg %5.1f (-%d hp)  F %6.1f  exp %.1f",
                 SoldierMovement.lastBlastDistance(), SoldierMovement.lastBlastDamage(),
                 SoldierMovement.lastHealthLost(), f, EXPECT_GROUNDED_BLAST_FORCE),
                 f <= 0f ? DIM : near(f, EXPECT_GROUNDED_BLAST_FORCE, 2.0f) ? GOOD : TEXT);
 
-        // Whether the audio pack loaded, and what the last voice attempt did.
         String reason = SoldierVoice.lastReason();
         line(g, mc, y, fmt("voice    pack %-3s  menu %s  last %-22s %s",
                 SoldierResourcePack.installed() ? "ON" : "off",
@@ -195,7 +172,6 @@ public final class SoldierDiagnostics {
         return Math.abs(actual - expected) <= tolerance;
     }
 
-    /** Locale.ROOT so a machine with a comma decimal separator still prints 142.7, not 142,7. */
     private static String fmt(String pattern, Object... args) {
         return String.format(Locale.ROOT, pattern, args);
     }

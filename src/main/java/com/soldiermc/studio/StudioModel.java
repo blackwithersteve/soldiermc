@@ -5,22 +5,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * MDL + VVD + VTX assembled into per-material triangle lists for one LOD. Pure Java, no Minecraft
- * types, so the mesh pipeline is testable headlessly against fixtures from {@code tools/srcparse}.
- */
 public final class StudioModel {
 
     public final MdlFile mdl;
     public final VvdFile vvd;
     public final VtxFile vtx;
-
-    /** Vertices in fixed-up order for the assembled LOD — the order VTX indices address. */
     public final List<VvdFile.Vertex> vertices;
-
-    /** material index -> flat triangle index triples into {@link #vertices}. */
     public final Map<Integer, int[]> trianglesByMaterial;
-
     public final int lod;
     public final int triangleCount;
 
@@ -31,10 +22,7 @@ public final class StudioModel {
         this.lod = lod;
         this.vertices = vvd.verticesForLod(lod);
 
-        // The base index of every mesh in the fixed-up array for this LOD. model.vertexIndex/48 +
-        // mesh.vertexOffset only holds for LOD 0, since the layout compacts above it; the running
-        // sum of mesh.numLodVertexes[lod] in bodypart -> model -> mesh order holds for every LOD and
-        // totals vvd.numLODVertexes[lod].
+        // Mesh bases are a running sum of numLodVertexes; vertexIndex only fits LOD 0.
         Map<Integer, int[]> out = new LinkedHashMap<>();
         int running = 0;
         List<int[]> tris = new ArrayList<>();
@@ -50,8 +38,7 @@ public final class StudioModel {
                     running += md.meshes[k].numLodVertexes[lod];
                 }
 
-                // Bodygroup choice: model 0 of each bodypart is what a stock Soldier wears.
-                // Later models are alternates (medals, loose rockets) and are off at body = 0.
+                // Body 0 draws only model 0; skipped models still advance the running sum.
                 if (mi != 0) continue;
                 if (bpi >= vtx.bodyParts.length) continue;
                 VtxFile.Model vmd = vtx.bodyParts[bpi].models[mi];
@@ -94,12 +81,7 @@ public final class StudioModel {
         this.triangleCount = t;
     }
 
-    /**
-     * The gate that must pass before anything renders; on failure the caller falls back to vanilla
-     * Steve and logs one warning.
-     *
-     * @return null if everything checks out, otherwise the reason
-     */
+    /** Returns null if the three files agree, otherwise the reason. */
     public static String validate(MdlFile mdl, VvdFile vvd, VtxFile vtx, int mdlFileSize) {
         if (mdl.checksum != vvd.checksum || mdl.checksum != vtx.checksum) {
             return "checksum mismatch: mdl=" + mdl.checksum

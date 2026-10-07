@@ -6,18 +6,12 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Fire → fly → detonate → impulse, end to end and headless. The muzzle throws the rocket 12.37 hu
- * off the player's axis, so a shot at your own feet never detonates on that axis and the blast is
- * weaker than the synthetic {@code d = 0} case.
- */
 class RocketJumpTest {
 
     private static final float DT = SourceFeel.DT;
     private static final int SHOOTER = 1;
     private static final float BASE_DAMAGE = 90.0f;
 
-    /** Fire straight down from a standing player at the origin on a flat floor. */
     private static RocketSpawn fireDown(FlatWorld world, boolean ducked, float pitch) {
         FireSetup setup = new FireSetup();
         RocketSpawn spawn = new RocketSpawn();
@@ -50,7 +44,7 @@ class RocketJumpTest {
         for (int i = 0; i < 100 && !boom; i++) boom = r.step(world, DT);
         assertTrue(boom, "the rocket must reach the floor");
 
-        // EXPLOSION_PULLOUT along the floor normal (0,0,1).
+        // EXPLOSION_PULLOUT along the floor normal.
         assertEquals(1.0f, r.blastZ, 1e-3f, "detonation is pulled 1 hu out of the surface");
         assertEquals(-1, r.hitEntityId, "it hit the world, not an entity");
     }
@@ -58,9 +52,7 @@ class RocketJumpTest {
     @Test
     @DisplayName("the rocket never hits its own shooter, even spawning inside his hull")
     void ownerIsExcluded() {
-        // The muzzle is 12.37 hu off the axis and the hull half-width is 24, so the rocket starts
-        // inside the shooter. Source excludes the owner through the trace filter, with no timer
-        // and no arming distance.
+        // The rocket spawns inside the shooter's hull; the trace filter skips the owner.
         FlatWorld world = new FlatWorld();
         RocketSpawn s = fireDown(world, false, 90f);
         RocketFlight r = new RocketFlight();
@@ -89,7 +81,6 @@ class RocketJumpTest {
                 false, true, false, false, BASE_DAMAGE);
         assertTrue(hit, "the blast must reach the player");
 
-        // 12.132 hu, 85.488 damage, 427.44 force, 415.47 velZ. The synthetic d=0 case gives 450.
         assertEquals(12.132f, blast.falloffDistance, 0.05f, "distance from the blast to the player");
         assertEquals(85.488f, blast.damage, 0.05f);
         assertEquals(427.440f, blast.forceMagnitude(), 0.5f);
@@ -102,7 +93,7 @@ class RocketJumpTest {
     @Test
     @DisplayName("pitch 89 is the reachable maximum, and it costs one more HP than pitch 90")
     void reachablePitchCostsOneMoreHitPoint() {
-        // cl_pitchdown is 89 and FCVAR_CHEAT, so TF2 cannot look straight down; Minecraft goes to 90.
+        // cl_pitchdown caps TF2 at 89 (FCVAR_CHEAT); Minecraft reaches 90.
         FlatWorld world = new FlatWorld();
 
         RocketSpawn ninety = fireDown(world, false, 90f);

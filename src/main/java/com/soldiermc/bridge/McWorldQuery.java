@@ -10,17 +10,10 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.List;
 
-/**
- * {@link WorldQuery} over Minecraft's collision: how far a hull gets and what it hit. {@code
- * Entity.move} is never called — the engine runs Source's own 4-bump {@code TryPlayerMove}, and
- * {@code Entity.move} would fire its per-move side effects once per substep.
- */
+/** Never calls Entity.move, whose side effects would then fire once per substep. */
 public final class McWorldQuery implements WorldQuery {
 
-    /**
-     * Minecraft's player hull width, blocks. Traces use this rather than TF2's 49 hu simulation
-     * hull, which at 1.05 blocks cannot fit through a 1-block gap.
-     */
+    /** Minecraft's player width in blocks; TF2's 49 hu hull cannot fit a 1-block gap. */
     private static final double PROBE_WIDTH = 0.6;
 
     private Entity entity;
@@ -38,7 +31,6 @@ public final class McWorldQuery implements WorldQuery {
         out.clear(toX, toY, toZ);
         if (entity == null || level == null) return;
 
-        // Engine -> Minecraft is a rotation, not an axis swap: mx = ex, my = ez, mz = -ey. See Units.
         double fx = Units.blocks(fromX), fy = Units.blocks(fromZ), fz = Units.engineYToMcZ(fromY);
         double tx = Units.blocks(toX), ty = Units.blocks(toZ), tz = Units.engineYToMcZ(toY);
 
@@ -47,8 +39,7 @@ public final class McWorldQuery implements WorldQuery {
 
         AABB box = hullAt(fx, fy, fz, hullHeight);
 
-        // Entity collisions only: collideBoundingBox gathers block shapes itself, so passing
-        // collectAllColliders as well would gather every block twice.
+        // Entities only: collideBoundingBox gathers block shapes itself.
         List<VoxelShape> entityShapes =
                 level.getEntityCollisions(entity, box.expandTowards(wantX, wantY, wantZ));
 
@@ -58,8 +49,7 @@ public final class McWorldQuery implements WorldQuery {
         SweepResolve.resolve(out, wantX, wantY, wantZ, got.x, got.y, got.z,
                 fromX, fromY, fromZ, toX, toY, toZ);
 
-        // Unconditional: walkMove returns early on fraction == 1 and never enters tryPlayerMove,
-        // so gating this on the fraction makes it unreachable in game.
+        // Unconditional: walkMove returns early on fraction 1, so a gated check never runs.
         out.startSolid = !level.noCollision(entity, box);
         out.allSolid = out.startSolid && out.fraction <= 0f;
     }
@@ -71,19 +61,12 @@ public final class McWorldQuery implements WorldQuery {
         return !level.noCollision(entity, box);
     }
 
-    /** Feet-centre origin (engine space) → a Minecraft AABB. */
     private AABB hullAt(double mcX, double mcY, double mcZ, float hullHeight) {
         double h = Units.blocks(hullHeight);
         double half = PROBE_WIDTH / 2.0;
         return new AABB(mcX - half, mcY, mcZ - half, mcX + half, mcY + h, mcZ + half);
     }
 
-    /**
-     * Whether a point has left the part of the world that can answer collision questions: outside
-     * the build height, or in an unloaded chunk. A platform substitution, not a ported value —
-     * {@code CTFBaseRocket::Spawn} gives a rocket no lifetime and no range limit, because Source
-     * removes entities that leave world bounds.
-     */
     public boolean outsideLoadedWorld(float huX, float huY, float huZ) {
         if (level == null) return true;
         double mcX = Units.blocks(huX);
@@ -107,7 +90,6 @@ public final class McWorldQuery implements WorldQuery {
         lineTrace(out, ignoreEntityId, true, fromX, fromY, fromZ, toX, toY, toZ);
     }
 
-    /** Both line traces. Blocks first, then — for the solid variant — entities along what is left. */
     private void lineTrace(TraceResult out, int ignoreEntityId, boolean includeEntities,
                            float fromX, float fromY, float fromZ,
                            float toX, float toY, float toZ) {
@@ -119,8 +101,7 @@ public final class McWorldQuery implements WorldQuery {
         double total = from.distanceTo(to);
         if (total < 1.0e-9) return;
 
-        // Block.COLLIDER / Fluid.NONE is the closest thing Minecraft has to MASK_SOLID_BRUSHONLY:
-        // the collision shape, ignoring water.
+        // COLLIDER with Fluid.NONE is Minecraft's closest match to MASK_SOLID_BRUSHONLY.
         var hit = level.clip(new net.minecraft.world.level.ClipContext(
                 from, to,
                 net.minecraft.world.level.ClipContext.Block.COLLIDER,
@@ -132,7 +113,6 @@ public final class McWorldQuery implements WorldQuery {
             end = hit.getLocation();
             out.fraction = (float) (from.distanceTo(end) / total);
             var dir = hit.getDirection();
-            // The face normal, back into engine space: mx -> ex, my -> ez, mz -> -ey.
             out.normalX = dir.getStepX();
             out.normalY = -dir.getStepZ();
             out.normalZ = dir.getStepY();
@@ -143,8 +123,7 @@ public final class McWorldQuery implements WorldQuery {
 
         if (!includeEntities) return;
 
-        // Entities are searched only along the segment the blocks left, so a wall between shooter
-        // and target wins without a second distance comparison.
+        // Searching only up to the block hit lets a wall win without comparing distances.
         AABB sweep = new AABB(from, end).inflate(1.0);
         var entHit = net.minecraft.world.entity.projectile.ProjectileUtil.getEntityHitResult(
                 level, entity, from, end, sweep,
@@ -156,7 +135,6 @@ public final class McWorldQuery implements WorldQuery {
             out.endY = Units.mcZToEngineY(p.z);
             out.endZ = Units.hu(p.y);
             out.hitEntityId = entHit.getEntity().getId();
-            // No plane normal from an entity hit; Source leaves it zero here too.
             out.normalX = 0f;
             out.normalY = 0f;
             out.normalZ = 0f;

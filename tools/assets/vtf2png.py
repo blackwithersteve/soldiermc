@@ -1,9 +1,5 @@
 #!/usr/bin/env python
-"""VTF -> PNG. Pure Python + numpy + Pillow.
-
-usage: python vtf2png.py <out_dir> <file.vtf> [file.vtf ...]
-       python vtf2png.py --all-mips <out_dir> <file.vtf ...>
-"""
+"""Usage: python vtf2png.py [--all-mips] <out_dir> <file.vtf> [file.vtf ...]"""
 import struct, sys, os
 import numpy as np
 from PIL import Image
@@ -27,8 +23,6 @@ def image_size(fmt, w, h):
     return (w * h * BPP[fmt]) // 8
 
 
-# ---- header
-
 class VtfHeader:
     pass
 
@@ -51,7 +45,7 @@ def read_header(data):
     h.depth   = struct.unpack_from("<H", data, 63)[0] if (h.vmaj, h.vmin) >= (7, 2) else 1
     h.numRes  = struct.unpack_from("<I", data, 68)[0] if (h.vmaj, h.vmin) >= (7, 3) else 0
     h.res = {}
-    for i in range(h.numRes):                     # 7.3+ resource dir: 8 bytes per entry
+    for i in range(h.numRes):                     # 7.3+ resource directory, 8 bytes per entry
         o = 80 + 8 * i
         h.res[bytes(data[o:o + 3])] = struct.unpack_from("<I", data, o + 4)[0]
     h.faces = 6 if (h.flags & 0x4000) else 1      # TEXTUREFLAGS_ENVMAP
@@ -65,15 +59,13 @@ def read_header(data):
 
 
 def mip_offset(h, level):
-    """Byte offset of mip `level` (0 = full size). VTF stores the SMALLEST mip FIRST."""
+    """VTF stores the smallest mip first; level 0 is full size."""
     off = h.hiOff
     for lvl in range(h.mipCount - 1, level, -1):
         w, hh = max(1, h.width >> lvl), max(1, h.height >> lvl)
         off += image_size(h.hiFmt, w, hh) * h.frames * h.faces * max(1, h.depth)
     return off
 
-
-# ---- DXT
 
 def _rgb565(c):
     r = (c >> 11) & 0x1F
@@ -85,7 +77,6 @@ def _rgb565(c):
 
 
 def _dxt_colour(buf, bw, bh, stride, coff, dxt1_alpha):
-    """Decode the 8-byte colour half of every block -> (H,W,4) uint8."""
     raw = np.frombuffer(buf, dtype=np.uint8).reshape(bw * bh, stride)[:, coff:coff + 8]
     c0 = raw[:, 0].astype(np.uint16) | (raw[:, 1].astype(np.uint16) << 8)
     c1 = raw[:, 2].astype(np.uint16) | (raw[:, 3].astype(np.uint16) << 8)
@@ -96,14 +87,14 @@ def _dxt_colour(buf, bw, bh, stride, coff, dxt1_alpha):
     r0, g0, b0 = r0.astype(np.int32), g0.astype(np.int32), b0.astype(np.int32)
     r1, g1, b1 = r1.astype(np.int32), g1.astype(np.int32), b1.astype(np.int32)
     op = np.full_like(r0, 255)
-    four = c0 > c1                                 # 4-colour vs 3-colour+punchthrough
+    four = c0 > c1                                 # 4 colours, else 3 plus punch-through
     pal = np.zeros((bw * bh, 4, 4), np.int32)
     pal[:, 0] = np.stack([r0, g0, b0, op], 1)
     pal[:, 1] = np.stack([r1, g1, b1, op], 1)
     c2_4 = np.stack([(2 * r0 + r1) // 3, (2 * g0 + g1) // 3, (2 * b0 + b1) // 3, op], 1)
     c3_4 = np.stack([(r0 + 2 * r1) // 3, (g0 + 2 * g1) // 3, (b0 + 2 * b1) // 3, op], 1)
     c2_3 = np.stack([(r0 + r1) // 2, (g0 + g1) // 2, (b0 + b1) // 2, op], 1)
-    a3 = 0 if dxt1_alpha else 255                  # transparent black vs opaque black
+    a3 = 0 if dxt1_alpha else 255
     z = np.zeros_like(r0)
     c3_3 = np.stack([z, z, z, np.full_like(r0, a3)], 1)
     f = four[:, None]
@@ -111,7 +102,7 @@ def _dxt_colour(buf, bw, bh, stride, coff, dxt1_alpha):
     pal[:, 3] = np.where(f, c3_4, c3_3)
     shifts = (2 * np.arange(16, dtype=np.uint32))[None, :]
     sel = ((idx[:, None] >> shifts) & 3).astype(np.intp)      # pixel order y*4+x
-    px = np.take_along_axis(pal, sel[:, :, None].repeat(4, 2), axis=1)   # (nb,16,4)
+    px = np.take_along_axis(pal, sel[:, :, None].repeat(4, 2), axis=1)
     px = px.reshape(bh, bw, 4, 4, 4).transpose(0, 2, 1, 3, 4).reshape(bh * 4, bw * 4, 4)
     return px.astype(np.uint8)
 
@@ -127,9 +118,9 @@ def _dxt5_alpha(buf, bw, bh):
     pal[:, 0] = a0
     pal[:, 1] = a1
     six = a0 > a1
-    for i in range(1, 7):                          # 8-alpha (fully interpolated) branch
+    for i in range(1, 7):                          # 8-alpha mode
         pal[:, i + 1] = np.where(six, ((7 - i) * a0 + i * a1) // 7, pal[:, i + 1])
-    for i in range(1, 5):                          # 6-alpha branch fills 2..5
+    for i in range(1, 5):                          # 6-alpha mode
         pal[:, i + 1] = np.where(six, pal[:, i + 1], ((5 - i) * a0 + i * a1) // 5)
     pal[:, 6] = np.where(six, pal[:, 6], 0)
     pal[:, 7] = np.where(six, pal[:, 7], 255)
@@ -146,11 +137,9 @@ def _dxt3_alpha(buf, bw, bh):
     a = np.empty((bw * bh, 16), np.uint8)
     a[:, 0::2] = lo
     a[:, 1::2] = hi
-    a = a * 17                                     # 4-bit -> 8-bit
+    a = a * 17
     return a.reshape(bh, bw, 4, 4).transpose(0, 2, 1, 3).reshape(bh * 4, bw * 4)
 
-
-# ---- decode
 
 def decode(data, h, level=0, frame=0, face=0):
     w, hh = max(1, h.width >> level), max(1, h.height >> level)
@@ -171,38 +160,36 @@ def decode(data, h, level=0, frame=0, face=0):
         a = np.frombuffer(buf, np.uint8)
         op = np.full((hh, w, 1), 255, np.uint8)
         if f == 0:
-            img = a.reshape(hh, w, 4)                                    # RGBA8888
+            img = a.reshape(hh, w, 4)
         elif f == 12:
-            img = a.reshape(hh, w, 4)[..., [2, 1, 0, 3]]                 # BGRA8888
+            img = a.reshape(hh, w, 4)[..., [2, 1, 0, 3]]
         elif f == 16:
-            img = a.reshape(hh, w, 4)[..., [2, 1, 0, 3]].copy()          # BGRX8888
+            img = a.reshape(hh, w, 4)[..., [2, 1, 0, 3]].copy()
             img[..., 3] = 255
         elif f == 11:
-            img = a.reshape(hh, w, 4)[..., [1, 2, 3, 0]]                 # ARGB8888
+            img = a.reshape(hh, w, 4)[..., [1, 2, 3, 0]]
         elif f == 1:
-            img = a.reshape(hh, w, 4)[..., [3, 2, 1, 0]]                 # ABGR8888
+            img = a.reshape(hh, w, 4)[..., [3, 2, 1, 0]]
         elif f == 2:
-            img = np.dstack([a.reshape(hh, w, 3), op])                   # RGB888
+            img = np.dstack([a.reshape(hh, w, 3), op])
         elif f == 3:
-            img = np.dstack([a.reshape(hh, w, 3)[..., ::-1], op])        # BGR888
+            img = np.dstack([a.reshape(hh, w, 3)[..., ::-1], op])
         elif f == 5:
-            g = a.reshape(hh, w)                                         # I8
+            g = a.reshape(hh, w)
             img = np.dstack([g, g, g, op[..., 0]])
         elif f == 8:
-            g = a.reshape(hh, w)                                         # A8
+            g = a.reshape(hh, w)
             img = np.dstack([np.zeros_like(g), np.zeros_like(g), np.zeros_like(g), g])
         elif f == 6:
-            t = a.reshape(hh, w, 2)                                      # IA88
+            t = a.reshape(hh, w, 2)
             img = np.dstack([t[..., 0], t[..., 0], t[..., 0], t[..., 1]])
         elif f == 22:
-            t = a.reshape(hh, w, 2)                                      # UV88
+            t = a.reshape(hh, w, 2)
             img = np.dstack([t[..., 0], t[..., 1], op[..., 0], op[..., 0]])
         else:
             raise NotImplementedError("format %d (%s)" % (f, FMT.get(f, "?")))
     return np.ascontiguousarray(img[:hh, :w, :])
 
-
-# ---- main
 
 def convert(path, out_dir, all_mips=False):
     data = open(path, "rb").read()

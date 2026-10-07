@@ -8,7 +8,6 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 
-/** Client-side switches: Source physics on/off, debug overlay on/off. */
 public final class SoldierClient {
 
     public static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(
@@ -27,19 +26,11 @@ public final class SoldierClient {
     private SoldierClient() {
     }
 
-    /** False falls back to vanilla movement. */
-    public static boolean enabled() {
-        return physics;
-    }
-
     public static boolean diagnostics() {
         return diagnostics;
     }
 
-    /**
-     * {@code +reload}, held state rather than an edge: TF2's reload machine restarts from the
-     * button being down on the substep the previous rocket finished.
-     */
+    /** Held state, not an edge: TF2 chains reloads while the button stays down. */
     public static boolean reloadDown() {
         return reload != null && reload.isDown();
     }
@@ -54,7 +45,6 @@ public final class SoldierClient {
         reload = KeyMappingHelper.registerKeyMapping(new KeyMapping(
             "key.soldiermc.reload", InputConstants.Type.KEYSYM,
             InputConstants.KEY_R, CATEGORY));
-        // TF2's own defaults: tf/cfg/config_default.cfg binds z/x/c to voice_menu_1/2/3.
         voice1 = KeyMappingHelper.registerKeyMapping(new KeyMapping(
             "key.soldiermc.voice_menu_1", InputConstants.Type.KEYSYM,
             InputConstants.KEY_Z, CATEGORY));
@@ -65,22 +55,15 @@ public final class SoldierClient {
             "key.soldiermc.voice_menu_3", InputConstants.Type.KEYSYM,
             InputConstants.KEY_C, CATEGORY));
         ClientTickEvents.END_CLIENT_TICK.register(SoldierClient::tick);
-        // Voice input runs at the START of the tick: Minecraft.handleKeybinds() drains the hotbar
-        // click queue partway through tick() (bytecode offset 181), so a handler at END sees an
-        // empty queue. Draining the clicks here also stops the hotbar switching under the menu.
+        // START, not END: handleKeybinds drains the hotbar click queue during tick().
         ClientTickEvents.START_CLIENT_TICK.register(SoldierClient::voiceTick);
     }
 
-    /**
-     * A monotonic client tick counter, not {@code level.getGameTime()}: world time restarts on
-     * joining another world and can be frozen by {@code /tick freeze}, leaving voice deadlines
-     * stamped against it permanently in the future.
-     */
+    /** Not level.getGameTime(), which restarts per world and stops under /tick freeze. */
     private static long clientTicks;
 
     private static void voiceTick(Minecraft mc) {
         if (mc.player == null || mc.level == null) {
-            // Left the world: drop the timers rather than carrying them into the next one.
             if (clientTicks != 0) {
                 clientTicks = 0;
                 SoldierVoice.reset();
@@ -110,7 +93,6 @@ public final class SoldierClient {
     }
 
     private static void tick(Minecraft mc) {
-        // consumeClick, not isDown: one toggle per physical press, off our own queue.
         while (togglePhysics.consumeClick()) {
             physics = !physics;
         }
@@ -118,11 +100,9 @@ public final class SoldierClient {
             diagnostics = !diagnostics;
         }
 
-        // The simulation re-seeds from the player's Minecraft state whenever it is switched on, so
-        // toggling mid-air picks up the live position and velocity.
         SoldierMovement.setActive(physics && mc.player != null);
 
-        // First tick with a world, not init: the pack repository is not ready until loading ends.
+        // Not in init: the pack repository is not ready until loading ends.
         if (mc.player != null && SoldierResourcePack.ensureInstalled()) {
             mc.reloadResourcePacks();
         }

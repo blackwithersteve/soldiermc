@@ -10,18 +10,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.random.RandomGenerator;
 
-/**
- * Line selection, the three-layer rate limit, and the menu state. Response groups draw without
- * replacement and reshuffle only once the group is exhausted.
- */
 public final class SoldierVoice {
 
-    /** {@code COMMAND_MAX_RATE}, keyed on the "voicemenu" command string. */
-    private static final long COMMAND_RATE_TICKS = 6;      // 0.3 s
-    /** The cap on the post-speech lockout: {@code min(sceneDuration, 1.5 s)}. */
-    private static final long MAX_SPEECH_LOCK_TICKS = 30;  // 1.5 s
-    /** {@code m_flSelectionTime} — the menu times out from OPEN, not from last input. */
-    private static final long MENU_TIMEOUT_TICKS = 100;    // 5.0 s
+    private static final long COMMAND_RATE_TICKS = 6;
+    private static final long MAX_SPEECH_LOCK_TICKS = 30;
+    private static final long MENU_TIMEOUT_TICKS = 100;
 
     private static long nextCommandTick;
     private static long nextVoiceTick;
@@ -39,25 +32,18 @@ public final class SoldierVoice {
     private SoldierVoice() {
     }
 
-    // ---------------------------------------------------------------- menu state
-
     public static int openMenu() {
         return openMenu;
     }
 
     public static void toggleMenu(int index, long now) {
-        // Pressing the same key again closes it; a different key switches.
         openMenu = (openMenu == index) ? -1 : index;
         menuOpenedTick = now;
     }
 
-    public static void closeMenu() {
-        openMenu = -1;
-    }
-
     public static void tick(Minecraft mc, long now) {
         if (openMenu >= 0 && now - menuOpenedTick > MENU_TIMEOUT_TICKS) {
-            // TF2 writes m_flSelectionTime only in ShowMenu, so hovering does not extend the 5 s.
+            // As in TF2, the timeout runs from opening; input does not extend it.
             openMenu = -1;
         }
         if (mc.player != null && (mc.player.isDeadOrDying() || mc.player.isSpectator())) {
@@ -65,18 +51,12 @@ public final class SoldierVoice {
         }
     }
 
-    /**
-     * A number key while a menu is open.
-     *
-     * @return true if the key was consumed, which stops it also switching weapons
-     */
     public static boolean select(int slot, long now) {
         if (openMenu < 0) return false;
         int menu = openMenu;
         openMenu = -1;
 
-        // The command rate limit is checked before the selection is validated, and a rejected
-        // command does not update the timestamp. Key 0's out-of-range index still burns a token.
+        // As in TF2, the rate limit is checked before the slot, so a bad key still counts.
         if (now < nextCommandTick) {
             lastReason = "command rate limit";
             return true;
@@ -84,17 +64,11 @@ public final class SoldierVoice {
         nextCommandTick = now + COMMAND_RATE_TICKS;
 
         Concept[] entries = SoldierVoiceLines.MENUS[menu];
-        if (slot < 0 || slot >= entries.length) return true;   // key 0, or menu 3 slot 9
+        if (slot < 0 || slot >= entries.length) return true;
         speak(entries[slot], now, true);
         return true;
     }
 
-    // ---------------------------------------------------------------- speaking
-
-    /**
-     * @param isVoiceCommand voice commands bypass the general speech lock but not the "already
-     *                       speaking" check, and they set the post-speech lockout
-     */
     public static void speak(Concept c, long now, boolean isVoiceCommand) {
         if (c == null) return;
         if (c.silent()) {
@@ -125,8 +99,7 @@ public final class SoldierVoice {
         lastLine = file;
         lastReason = "";
 
-        // GESTURE_SLOT_ATTACK_AND_RELOAD, the slot fire and reload use, so a voice command
-        // interrupts a reload animation. "Yes", "No" and "Jeers" are audio only.
+        // Gestures share TF2's attack and reload slot, so they interrupt a reload.
         if (c.gesture != null) {
             SoldierBody.animState().startGesture(c.gesture, c.gestureSeconds);
         }
@@ -146,14 +119,12 @@ public final class SoldierVoice {
         return lastLine;
     }
 
-    /** Why the last selection produced nothing, or "" if it spoke. */
     public static String lastReason() {
         return lastReason;
     }
 
     private static final java.util.Random SHUFFLE = new java.util.Random();
 
-    /** Draw without replacement, reshuffling when the group empties. */
     private static String draw(Concept c) {
         if (c.bag.isEmpty()) {
             c.bag.addAll(List.of(c.files));
@@ -162,12 +133,7 @@ public final class SoldierVoice {
         return c.bag.remove(c.bag.size() - 1);
     }
 
-    // ---------------------------------------------------------------- reactions
-
-    /**
-     * Took damage and lived. Fall damage short-circuits in {@code PainSound} to the generic death
-     * bank without firing the pain concept or advancing the cooldown, but it still reads it.
-     */
+    /** As in TF2, fall damage reads the pain cooldown but does not advance it. */
     public static void onHurt(long now, boolean fallDamage) {
         if (now < nextPainTick) return;
         Concept c = fallDamage ? SoldierVoiceLines.DEATH_GENERIC : SoldierVoiceLines.PAIN;
@@ -176,15 +142,14 @@ public final class SoldierVoice {
     }
 
     public static void onDeath(long now, boolean blast, boolean crit) {
-        // CTFPlayer::DeathSound tests BLAST before CRITICAL, so a crit rocket kill plays the sharp
-        // bank and never the critical one.
+        // TF2 tests blast before crit, so a crit rocket kill plays the blast bank.
         Concept c = blast ? SoldierVoiceLines.DEATH_BLAST
                 : crit ? SoldierVoiceLines.DEATH_CRIT
                 : SoldierVoiceLines.DEATH_GENERIC;
         speak(c, now, false);
     }
 
-    /** Burning. TF2's hard timer between burn barks is 2.5 s. */
+    /** TF2 allows one burn bark every 2.5 s. */
     public static void onFire(long now) {
         if (now < nextBurnTick) return;
         nextBurnTick = now + 50;
@@ -193,9 +158,9 @@ public final class SoldierVoice {
 
     private static long roundStartAt = -1;
 
-    /** Queue the spawn battle cry with TF2's uniform 1-5 s predelay. */
+    /** The spawn battle cry waits TF2's uniform 1 to 5 s predelay. */
     public static void queueRoundStart(long now) {
-        roundStartAt = now + 20 + RNG.nextInt(81);   // 1.0 s .. 5.0 s
+        roundStartAt = now + 20 + RNG.nextInt(81);
     }
 
     public static void tickRoundStart(long now) {

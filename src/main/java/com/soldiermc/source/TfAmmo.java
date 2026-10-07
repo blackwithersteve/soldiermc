@@ -1,6 +1,6 @@
 package com.soldiermc.source;
 
-/** {@code tf_shareddefs.h:357-360}. */
+/** TF_AMMO_* values, tf_shareddefs.h. */
 public final class TfAmmo {
 
     public static final int DUMMY = 0;

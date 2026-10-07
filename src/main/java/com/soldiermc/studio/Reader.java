@@ -4,11 +4,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 
-/**
- * Little-endian cursor over a Source file. String indices in Source structs are relative to the
- * struct they live in, not to the file — a bone's {@code sznameindex} is an offset from the start of
- * that bone — which is why {@link #stringAt} takes the base explicitly.
- */
+/** Little-endian reader; Source string offsets are relative to their own struct. */
 public final class Reader {
 
     private final ByteBuffer buf;
@@ -21,24 +17,12 @@ public final class Reader {
         return buf.capacity();
     }
 
-    public void seek(int pos) {
-        buf.position(pos);
-    }
-
     public int pos() {
         return buf.position();
     }
 
-    public int i32() {
-        return buf.getInt();
-    }
-
     public int i32At(int at) {
         return buf.getInt(at);
-    }
-
-    public short i16() {
-        return buf.getShort();
     }
 
     public short i16At(int at) {
@@ -53,19 +37,10 @@ public final class Reader {
         return buf.get(at) & 0xFF;
     }
 
-    public float f32() {
-        return buf.getFloat();
-    }
-
     public float f32At(int at) {
         return buf.getFloat(at);
     }
 
-    public void skip(int n) {
-        buf.position(buf.position() + n);
-    }
-
-    /** A null-terminated string at {@code structBase + relativeOffset}. */
     public String stringAt(int structBase, int relativeOffset) {
         if (relativeOffset == 0) return "";
         int p = structBase + relativeOffset;
@@ -77,7 +52,6 @@ public final class Reader {
         return new String(out, StandardCharsets.US_ASCII);
     }
 
-    /** A fixed-width null-padded string at an absolute offset (used only by the MDL header's name). */
     public String fixedStringAt(int at, int len) {
         byte[] out = new byte[len];
         for (int i = 0; i < len; i++) out[i] = buf.get(at + i);

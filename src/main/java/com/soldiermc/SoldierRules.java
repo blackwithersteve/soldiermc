@@ -6,13 +6,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.gamerules.GameRule;
 import net.minecraft.world.level.gamerules.GameRuleCategory;
 
-/**
- * The mod's own gamerules. A client cannot read a gamerule for itself, so it keeps its own copy and
- * the server's value only gates server-side effects.
- */
+/** Clients cannot read gamerules, so these only gate server-side effects. */
 public final class SoldierRules {
 
-    /** Whether rockets break blocks. Off by default. */
     public static GameRule<Boolean> ROCKET_GRIEFING;
 
     private SoldierRules() {

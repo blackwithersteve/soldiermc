@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** {@code AngleVectors} / {@code VectorAngles} against hand-computed Source values. */
 class AngleMathTest {
 
     private static final float EPS = 1e-5f;
@@ -45,11 +44,11 @@ class AngleMathTest {
     }
 
     @Test
-    @DisplayName("straight down takes the degenerate branch — the rocket-jump case")
+    @DisplayName("straight down takes the degenerate branch (the rocket-jump case)")
     void degenerateVerticalBranch() {
         float[] a = new float[2];
 
-        // x == 0 && y == 0: VectorAngles hardcodes the angles instead of computing them.
+        // With x and y both zero, VectorAngles hardcodes the angles.
         AngleMath.vectorAngles(0f, 0f, -1f, a);
         assertEquals(90f, a[0], EPS, "straight down is pitch 90");
         assertEquals(0f, a[1], EPS, "and yaw is forced to 0, whatever the player was facing");
@@ -71,7 +70,6 @@ class AngleMathTest {
         assertEquals(0f, v[1], EPS);
         assertEquals(-1f, v[2], EPS, "down in, down out");
 
-        // A general direction survives the trip too, despite the [0,360) renormalisation.
         float[] src = {0.3f, -0.5f, 0.81f};
         AngleMath.normalize(src, 0);
         AngleMath.vectorAngles(src[0], src[1], src[2], a);

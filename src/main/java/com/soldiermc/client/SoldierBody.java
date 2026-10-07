@@ -17,39 +17,26 @@ import org.joml.Matrix4f;
 
 import java.util.Map;
 
-/**
- * Emits the Soldier mesh, skinned by the real TF2 animation data. File space F, as authored: +X is
- * the model's left, +Y up, +Z forward, and raw VVD positions live here. Source game space S: +X
- * forward, +Y left, +Z up, holding every animated bone transform and so every skinned vertex.
- * Minecraft M: +X east, +Y up, +Z south. Skinned vertices arrive in S, because the animation's own
- * root track carries the authoring rotation, so only {@link #SOURCE_TO_MC} is applied.
- */
+/** Skinned vertices arrive in Source space; the root track holds the file rotation. */
 public final class SoldierBody {
 
-    /** Hammer units to blocks. */
     private static final float K = 1.0f / Units.S;
 
     private static final long START_NANOS = System.nanoTime();
 
-    /** One locomotion state machine for the local player. Multi-player gets a per-entity map later. */
     private static final com.soldiermc.animstate.TfAnimState ANIM =
             new com.soldiermc.animstate.TfAnimState();
 
     private static long lastPoseNanos = System.nanoTime();
 
-    /**
-     * {@code GetCurrentMaxGroundSpeed()} at the edge of the locomotion blend box, hu/s. Hardcoded
-     * rather than read from {@code mstudiomovement_t}.
-     */
+    /** GetCurrentMaxGroundSpeed at the blend box edge in hu/s, not read from the MDL. */
     private static final float RUN_BOX_EDGE_SPEED = 240.0f;
     private static final float CROUCH_BOX_EDGE_SPEED = 80.0f;
 
-    /** Exposed for the instrument panel. */
     private static volatile String lastActivity = "-";
     private static volatile float lastCycle;
     private static volatile float lastRate = 1f;
 
-    /** The locomotion and gesture state machine. */
     public static com.soldiermc.animstate.TfAnimState animState() {
         return ANIM;
     }
@@ -66,7 +53,6 @@ public final class SoldierBody {
         return lastRate;
     }
 
-    /** The aim chain, exposed for the instrument panel. */
     private static volatile float lastEyeYaw;
     private static volatile float lastFeetYaw;
     private static volatile float lastBodyYaw;
@@ -88,10 +74,7 @@ public final class SoldierBody {
         return lastBodyPitch;
     }
 
-    /**
-     * Source game space to Minecraft: S.x → M.x, S.y → M.−z, S.z → M.y. Orthonormal, determinant +1.
-     * JOML {@code Matrix4f} is column-major, so each column is the image of one S axis.
-     */
+    /** Source (+X forward, +Y left, +Z up) to Minecraft; JOML takes columns. */
     private static final Matrix4f SOURCE_TO_MC = new Matrix4f(
             1f, 0f, 0f, 0f,
             0f, 0f, -1f, 0f,
@@ -107,9 +90,7 @@ public final class SoldierBody {
     private SoldierBody() {
     }
 
-    /**
-     * @return true if the Soldier was drawn and vanilla rendering should be cancelled
-     */
+    /** Returns true when the Soldier is drawn and vanilla rendering must be cancelled. */
     public static boolean submit(AvatarRenderState state, PoseStack pose,
                                  SubmitNodeCollector collector) {
         SoldierAssets.ensureLoaded();
@@ -120,22 +101,17 @@ public final class SoldierBody {
 
         pose.pushPose();
 
-        // 1. Yaw about MC +Y, in Source degrees. At the head of submit the PoseStack is
-        //    translation-only and world-aligned — setupRotations, scale(-1,-1,1) and
-        //    translate(0,-1.501,0) have not run yet.
-        // The converged feet yaw, not the view yaw; the aim layer swings the upper body to the view.
+        // The PoseStack is translation-only here; setupRotations and its flips run later.
         pose.mulPose(Axis.YP.rotationDegrees(ANIM.currentFeetYaw()));
 
-        // 2. Hammer units to blocks, kept as its own step: PoseStack$Pose.scale returns early for a
-        //    uniform non-negative scale and never touches the normal matrix, so normals stay unit.
+        // Uniform scale on its own: Pose.scale then leaves the normal matrix alone.
         pose.scale(K, K, K);
 
-        // 3. Source -> Minecraft.
         pose.mulPose(SOURCE_TO_MC);
 
         for (Map.Entry<Integer, int[]> e : model.trianglesByMaterial.entrySet()) {
             Identifier tex = textureFor(e.getKey());
-            if (tex == null) continue;   // eyes: placeholder textures
+            if (tex == null) continue;
             final int[] indices = e.getValue();
             RenderType type = RenderTypes.entitySolid(tex);
             collector.submitCustomGeometry(pose, type,
@@ -146,7 +122,7 @@ public final class SoldierBody {
         return true;
     }
 
-    /** Material 0 is the body, hat and webbing; material 2 is the head. 1 and 3 are the eyeballs. */
+    /** Material 0 is body, hat and webbing; 2 is the head; 1 and 3 are eyeballs. */
     private static Identifier textureFor(int material) {
         return switch (material) {
             case 0 -> SoldierAssets.bodyTexture();
@@ -155,40 +131,27 @@ public final class SoldierBody {
         };
     }
 
-    /**
-     * Advance the animation state machine, exactly once per rendered frame, from the
-     * {@code Minecraft#renderFrame} mixin. {@code CMultiPlayerAnimState::Update} takes no {@code dt}
-     * and is written for one call per frame, as {@code UpdateClientSideAnimations} gives it;
-     * {@code updateFeetYaw}'s 45 degree goal step is per-call, so a second call in a frame doubles it.
-     */
+    /** Call once per rendered frame: updateFeetYaw's 45 degree goal step is per call. */
     public static void advance() {
         var player = net.minecraft.client.Minecraft.getInstance().player;
         if (player == null) return;
 
         long nowNanos = System.nanoTime();
         float now = (nowNanos - START_NANOS) / 1_000_000_000.0f;
-        // 0.25 is the port's own clamp; TF2 clamps nothing on this path. GetAnimTimeInterval's 0.2
-        // belongs to StudioFrameAdvance, which returns immediately for a client-side-animating entity.
+        // TF2 does not clamp dt on this path; 0.25 is this port's own limit.
         float dt = Math.min((nowNanos - lastPoseNanos) / 1_000_000_000.0f, 0.25f);
         lastPoseNanos = nowNanos;
 
-        // Gestures advance whether or not the ported physics are driving; one started with the
-        // physics off would otherwise never retire.
         if (!SoldierMovement.isActive()) {
             ANIM.tickGestures(dt);
             return;
         }
 
-        // Speed from the ported movement engine, not Minecraft's walkAnimationSpeed.
         float velX = SoldierMovement.velX();
         float velY = SoldierMovement.velY();
         float speed2D = SoldierMovement.horizontalSpeed();
 
-        // The live view yaw, not the render state's — c_tf_player.cpp:4278 splits the same way,
-        // EyeAngles() for the local player and the interpolated networked angle for everyone else.
-        // yHeadRot is written only by Player.aiStep, once per 20 Hz tick; getYRot() is written by
-        // Entity.turn every frame. Pitch is not stale: Entity.turn writes xRot and xRotO with the
-        // same delta, so the interpolated value already equals the live one.
+        // getYRot updates every frame; yHeadRot only once per 20 Hz tick in Player.aiStep.
         float eyeYaw = Units.sourceYaw(player.getYRot());
         float moveYaw = speed2D > 0.5f
                 ? (float) Math.toDegrees(Math.atan2(velY, velX))
@@ -216,11 +179,10 @@ public final class SoldierBody {
 
         float[] pos = new float[86 * 3];
         float[] rot = new float[86 * 4];
-        // paramIndex0 is move_y and paramIndex1 is move_x, so these arguments are not swapped.
+        // paramIndex0 is move_y and paramIndex1 is move_x, so this order is correct.
         SoldierAssets.evaluator().evaluate(seq, ANIM.cycle(),
                 ANIM.poseMoveY(), ANIM.poseMoveX(), pos, rot);
 
-        // Cross-fade from the outgoing sequence.
         float w = ANIM.blendWeight();
         if (w < 1f) {
             var prevSeq = SoldierAssets.sequenceFor(ANIM.prevActivity());
@@ -228,7 +190,6 @@ public final class SoldierBody {
             float[] pRot = new float[86 * 4];
             SoldierAssets.evaluator().evaluate(prevSeq, ANIM.prevCycle(),
                     ANIM.poseMoveY(), ANIM.poseMoveX(), pPos, pRot);
-            // Smoothstep rather than linear.
             float t = w * w * (3f - 2f * w);
             com.soldiermc.studio.SequenceEvaluator.blendSkeleton(
                     anims.bones.length, pPos, pRot, pos, rot, t);
@@ -236,12 +197,10 @@ public final class SoldierBody {
             System.arraycopy(pRot, 0, rot, 0, rot.length);
         }
 
-        // The aim matrix, as an additive delta. Its weight list zeroes the eight leg bones, so the
-        // upper body tracks the view while the legs keep walking.
         SoldierAssets.evaluator().applyAutoLayers(seq,
                 ANIM.poseBodyYaw(), ANIM.poseBodyPitch(), pos, rot);
 
-        // Gesture layers go last, after the aim matrix: post-multiplication does not commute.
+        // Gestures go after the aim matrix: post-multiplication does not commute.
         if (ANIM.landActive() && SoldierAssets.jumpLand() != null) {
             SoldierAssets.evaluator().accumulateGesture(
                     SoldierAssets.jumpLand(), ANIM.landCycle(), 1.0f, pos, rot);
@@ -263,22 +222,18 @@ public final class SoldierBody {
                              int[] indices, float[] palette, int light) {
         java.util.List<VvdFile.Vertex> verts = model.vertices;
 
-        // Scratch allocated once per emit, not once per vertex; the mesh is ~8,200 drawn triangles.
-        // Locals rather than statics, so two entities' emits cannot share them.
         final float[] sp = new float[3];
         final float[] sn = new float[3];
         final org.joml.Vector3f wp = new org.joml.Vector3f();
         final org.joml.Vector3f wn = new org.joml.Vector3f();
 
         for (int i = 0; i + 2 < indices.length; i += 3) {
-            // Winding reversed: v0, v2, v1. Source's front faces wind the opposite way to
-            // Minecraft's backface culling, so file order culls every near surface.
+            // v0, v2, v1: Source winds front faces opposite to Minecraft's culling.
             VvdFile.Vertex last = verts.get(indices[i + 1]);
             vertex(p, vc, verts.get(indices[i]), palette, light, sp, sn, wp, wn);
             vertex(p, vc, verts.get(indices[i + 2]), palette, light, sp, sn, wp, wn);
             vertex(p, vc, last, palette, light, sp, sn, wp, wn);
-            // submitCustomGeometry's buffer is QUADS-topology; a degenerate fourth vertex makes each
-            // triangle a quad. The same vertex as the last, so push it again rather than re-skin it.
+            // The buffer is QUADS; a repeated fourth vertex turns each triangle into a quad.
             push(vc, last, wp, wn, light);
         }
     }
@@ -289,14 +244,11 @@ public final class SoldierBody {
                                org.joml.Vector3f wp, org.joml.Vector3f wn) {
         Skeleton.skinPosition(palette, v, sp);
         Skeleton.skinNormal(palette, v, sn);
-        // Pose exposes transformNormal but not transformPosition, so the position goes through the
-        // matrix directly; transformNormal uses the separate normal matrix.
         p.pose().transformPosition(sp[0], sp[1], sp[2], wp);
         p.transformNormal(sn[0], sn[1], sn[2], wn);
         push(vc, v, wp, wn, light);
     }
 
-    /** Push an already-transformed vertex. Separate so the degenerate fourth can reuse the work. */
     private static void push(VertexConsumer vc, VvdFile.Vertex v,
                              org.joml.Vector3f wp, org.joml.Vector3f wn, int light) {
         vc.addVertex(wp.x, wp.y, wp.z,

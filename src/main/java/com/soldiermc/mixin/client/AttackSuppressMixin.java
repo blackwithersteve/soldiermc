@@ -8,7 +8,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Cancels Minecraft's attack and use-item entry points, since the weapon reads M1/M2 passively. */
+/** The weapon polls the attack and use keys, so vanilla's handlers are cancelled. */
 @Mixin(Minecraft.class)
 public abstract class AttackSuppressMixin {
 

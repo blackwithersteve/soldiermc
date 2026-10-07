@@ -1,19 +1,6 @@
 package com.soldiermc.studio;
 
-/**
- * Source {@code .dx90.vtx} — the optimised index and strip data. Verified against
- * {@code soldier.dx90.vtx}, version 7. Every struct is packed ({@code #pragma pack(1)}), so
- * {@code MeshHeader_t} is 9 bytes, {@code StripGroupHeader_t} 25 and {@code StripHeader_t} 27, and
- * every offset inside the tree is relative to the struct that holds it.
- *
- * <p>The index chain:
- * <pre>
- *   strip index (ushort, relative to strip.indexOffset within the strip group's index array)
- *     -> stripgroup.verts[index]        (Vertex_t, 9 bytes)
- *     -> Vertex_t.origMeshVertID        (ushort)
- *     -> + the mesh's base in the fixed-up VVD array for this LOD
- * </pre>
- */
+/** VTX file; structs are pack(1) and every offset is relative to its own struct. */
 public final class VtxFile {
 
     public final int version;
@@ -25,9 +12,6 @@ public final class VtxFile {
 
     public VtxFile(byte[] bytes) {
         r = new Reader(bytes);
-        // FileHeader_t: version 0, vertCacheSize 4, maxBonesPerStrip 8 (u16), maxBonesPerTri 10
-        // (u16), maxBonesPerVert 12, checksum 16, numLODs 20, materialReplacementListOffset 24,
-        // numBodyParts 28, bodyPartOffset 32.
         version = r.i32At(0);
         checksum = r.i32At(16);
         numLODs = r.i32At(20);
@@ -97,20 +81,15 @@ public final class VtxFile {
         return s;
     }
 
-    /** The i-th ushort in a strip group's index array. */
     public int index(StripGroup sg, int i) {
         return r.u16At(sg.indexOffsetAbs + 2 * i);
     }
 
-    /** {@code Vertex_t.origMeshVertID} for the i-th strip-group vertex (9-byte stride). */
+    /** Vertex_t is 9 bytes with origMeshVertID at offset 4. */
     public int origMeshVertId(StripGroup sg, int i) {
         return r.u16At(sg.vertOffsetAbs + 9 * i + 4);
     }
 
-    /**
-     * Emit a strip's triangles as strip-group vertex indices into {@code out}. Tristrips alternate
-     * winding per triangle and contain degenerate stitch triangles; trilists are plain triples.
-     */
     public void triangles(StripGroup sg, Strip strip, TriSink out) {
         int base = strip.indexOffset;
         if ((strip.flags & 0x02) != 0) {          // STRIP_IS_TRISTRIP
@@ -118,11 +97,11 @@ public final class VtxFile {
                 int a = index(sg, base + k);
                 int b = index(sg, base + k + 1);
                 int c = index(sg, base + k + 2);
-                if (a == b || b == c || a == c) continue;   // degenerate stitch
+                if (a == b || b == c || a == c) continue;
                 if ((k & 1) != 0) out.tri(a, c, b);
                 else out.tri(a, b, c);
             }
-        } else {                                   // STRIP_IS_TRILIST
+        } else {
             for (int k = 0; k + 2 < strip.numIndices; k += 3) {
                 out.tri(index(sg, base + k), index(sg, base + k + 1), index(sg, base + k + 2));
             }

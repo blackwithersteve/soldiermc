@@ -12,11 +12,6 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
 
-/**
- * Loads data/&lt;namespace&gt;/weapons/*.json. Registered against SERVER_DATA, so /reload re-reads
- * every number without restarting the game; a missing or malformed file is not fatal, since get()
- * falls back to the compiled-in stock values.
- */
 public final class WeaponStatsLoader extends SimpleJsonResourceReloadListener<WeaponStats>
     implements IdentifiableResourceReloadListener {
 
@@ -36,7 +31,6 @@ public final class WeaponStatsLoader extends SimpleJsonResourceReloadListener<We
         ResourceManagerHelper.get(PackType.SERVER_DATA).registerReloadListener(new WeaponStatsLoader());
     }
 
-    /** Never null: falls back to the compiled-in stock values. */
     public static WeaponStats get(Identifier id) {
         final WeaponStats stats = loaded.get(id);
         return stats != null ? stats : WeaponStats.ROCKET_LAUNCHER_FALLBACK;

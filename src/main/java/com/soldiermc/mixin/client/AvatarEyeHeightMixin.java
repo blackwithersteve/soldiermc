@@ -11,7 +11,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Hooks {@code Avatar.getDefaultDimensions} to put the camera at TF2's 68 hu eye height. */
 @Mixin(Avatar.class)
 public abstract class AvatarEyeHeightMixin {
 

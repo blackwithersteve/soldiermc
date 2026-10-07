@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""
-Extract stock TF2 weapon stats from a TF2 install into a JSON data file for the mod.
-
-Sources, in the order the engine reads them:
-  1. scripts/tf_weapon_<name>.txt      -> base per-weapon stats (CTFWeaponInfo::Parse)
-  2. scripts/playerclasses/<class>.txt -> max ammo, class health, class speed
-  3. scripts/items/items_game.txt      -> item defs + prefabs + attribute defs
-
-Loose files under <tf2>/tf/ win over VPK entries, matching the engine's search path.
-TF2 ships these as ICE-encrypted .ctx, decoded here through ice_cipher.py.
-
-Usage:
-  python extract_tf2_stats.py --tf-dir "C:/Program Files (x86)/Steam/steamapps/common/Team Fortress 2/tf" \
-                              --out ../src/main/resources/data/tf2soldier/tf2_stats.json
-  python extract_tf2_stats.py --autodetect --out tf2_stats.json
-"""
+"""Usage: python extract_tf2_stats.py --tf-dir <dir> | --autodetect [--out <json>]"""
 
 import argparse
 import json
@@ -25,11 +10,8 @@ import sys
 
 from ice_cipher import decode_ice
 
-# ICE keys (level 0 / 64-bit). tf_shareddefs.cpp:1614 and econ_item_system.h:79
 KEY_WEAPON_SCRIPTS = b"E2NcUkG2"
 KEY_ECON_SCRIPTS = b"A5fSXbf7"
-
-# ---- VPK v1/v2 directory reader (read-only)
 
 VPK_MAGIC = 0x55AA1234
 
@@ -38,7 +20,7 @@ class Vpk:
     def __init__(self, dir_path):
         self.dir_path = dir_path
         self.base = dir_path[:-len("_dir.vpk")] if dir_path.endswith("_dir.vpk") else None
-        self.entries = {}  # "scripts/tf_weapon_shovel.txt" -> entry dict
+        self.entries = {}
         self._read_dir()
 
     def _read_dir(self):
@@ -108,16 +90,14 @@ class Vpk:
             return e["preload"] + f.read(e["length"])
 
 
-# ---- Valve KeyValues (VDF) parser, text form; no #base/#include support
-
 TOKEN_RE = re.compile(r'"((?:[^"\\]|\\.)*)"|(\{)|(\})|([^\s{}"]+)')
 
 
 def kv_parse(text):
-    """Parse KeyValues text into nested dicts. Duplicate keys become lists."""
+    """Duplicate keys become lists; #base and #include are not supported."""
     if text.startswith("\ufeff"):
         text = text[1:]
-    # strip // comments outside quotes
+    # Strip // comments outside quotes.
     out, i, n, in_str = [], 0, len(text), False
     while i < n:
         c = text[i]
@@ -201,9 +181,6 @@ def kv_parse(text):
     return root
 
 
-# ---- Prefab resolution: MergeDefinitionPrefab / RecursiveInheritKeyValues
-# (econ_item_schema.cpp:2940 and :2897)
-
 def recursive_inherit(out, src):
     for k, v in src.items():
         if isinstance(v, dict):
@@ -219,7 +196,7 @@ def recursive_inherit(out, src):
 def merge_prefab(out, src, prefabs):
     name = src.get("prefab")
     if isinstance(name, str):
-        # "iterate backwards so adjectives get applied over the noun prefab"
+        # Reversed so adjective prefabs apply over the noun prefab.
         for p in reversed(name.split()):
             kv = prefabs.get(p.lower())
             if kv:
@@ -233,8 +210,6 @@ def resolve_item(item_kv, prefabs):
     return out
 
 
-# ---- File access layer: loose file first, then VPKs
-
 class TfFiles:
     def __init__(self, tf_dir):
         self.tf_dir = tf_dir
@@ -247,7 +222,7 @@ class TfFiles:
                     print("  warn: %s: %s" % (fn, e), file=sys.stderr)
 
     def read_bytes(self, rel):
-        """Loose file wins over VPK, exactly like the engine's MOD/GAME search paths."""
+        """A loose file wins over the VPKs, as in the engine's search paths."""
         loose = os.path.join(self.tf_dir, rel.replace("/", os.sep))
         if os.path.isfile(loose):
             with open(loose, "rb") as f:
@@ -265,8 +240,7 @@ class TfFiles:
         return data.decode("utf-8", "replace"), src
 
     def read_kv(self, rel_no_ext, key):
-        """Mirror of ReadEncryptedKVFile (weapon_parse.cpp:196): try <name>.txt,
-        fall back to ICE-decoding <name>.ctx. TF2 ships .ctx for these."""
+        """Like ReadEncryptedKVFile: <name>.txt first, else ICE-decode <name>.ctx."""
         txt, src = self.read_text(rel_no_ext + ".txt")
         if txt is not None:
             return txt, src
@@ -275,7 +249,7 @@ class TfFiles:
             return None, None
         plain = decode_ice(raw, key).decode("utf-8", "replace")
         if "{" not in plain:
-            raise RuntimeError("ICE decode of %s.ctx produced no KeyValues - wrong key?"
+            raise RuntimeError("ICE decode of %s.ctx produced no KeyValues; wrong key?"
                                % rel_no_ext)
         return plain, src + " (ICE-decoded)"
 
@@ -283,17 +257,14 @@ class TfFiles:
         return self.read_kv("scripts/" + classname, KEY_WEAPON_SCRIPTS)
 
 
-# ---- Extraction
-
-# entity classname -> which class-slot it is, and which items_game def index is stock
+# (classname, class, slot, assumed stock items_game defindex)
 TARGETS = [
     ("tf_weapon_rocketlauncher",   "soldier", "primary",   18),
     ("tf_weapon_shotgun_soldier",  "soldier", "secondary", 10),
     ("tf_weapon_shovel",           "soldier", "melee",      6),
 ]
 
-# Keys read by CTFWeaponInfo::Parse (tf_weapon_parse.cpp:68-97) and
-# FileWeaponInfo_t::Parse (weapon_parse.cpp:364-442). Defaults match the source.
+# Defaults match the engine's weapon script parser.
 WEAPON_KEYS_INT = {
     "damage": 0, "bulletspershot": 0, "clip_size": -1, "clip2_size": -1,
     "ammopershot": 1, "bucket": 0, "bucket_position": 0, "weight": 0,
@@ -301,8 +272,7 @@ WEAPON_KEYS_INT = {
 }
 WEAPON_KEYS_FLOAT = {
     "range": 8192.0, "spread": 0.0, "punchangle": 0.0, "timefiredelay": 0.0,
-    # The engine reads the misspelled key "TimeIdleEmpy" (tf_weapon_parse.cpp:75), so
-    # both spellings are captured.
+    # The engine reads the misspelled TimeIdleEmpy, so both spellings are kept.
     "timeidle": 0.0, "timeidleempy": 0.0, "timeidleempty": 0.0, "timereloadstart": 0.0,
     "timereload": 0.0, "projectilespeed": 0.0, "smackdelay": 0.2,
     "damageradius": 0.0, "primertime": 0.0,
@@ -330,7 +300,6 @@ def extract_weapon(kv):
         out[k] = num(wd.get(k), d)
     for k, d in WEAPON_KEYS_STR.items():
         out[k] = wd.get(k, d) if isinstance(wd.get(k, d), str) else d
-    # secondary mode inherits from primary unless overridden (tf_weapon_parse.cpp:108-120)
     sec = {}
     for k in ("damage", "bulletspershot", "ammopershot"):
         sec[k] = num(wd.get("secondary_" + k), out[k])
@@ -397,7 +366,6 @@ def main():
         "items": {},
     }
 
-    # ---- per-weapon scripts
     names = [t[0] for t in TARGETS]
     if args.all_weapons:
         seen = set(names)
@@ -417,7 +385,6 @@ def main():
         result["_provenance"][cls] = src
         print("  ok %-32s <- %s" % (cls, src))
 
-    # ---- player class scripts
     for pclass in ("soldier",):
         txt, src = files.read_kv("scripts/playerclasses/%s" % pclass, KEY_WEAPON_SCRIPTS)
         if txt is None:
@@ -434,7 +401,6 @@ def main():
         result["_provenance"]["playerclass_" + pclass] = src
         print("  ok %-32s <- %s" % (pclass, src))
 
-    # ---- items_game.txt
     txt, src = files.read_kv("scripts/items/items_game", KEY_ECON_SCRIPTS)
     if txt is None:
         print("  MISSING scripts/items/items_game.txt", file=sys.stderr)
@@ -444,7 +410,6 @@ def main():
         prefabs = {k.lower(): v for k, v in (schema.get("prefabs") or {}).items()}
         items = schema.get("items") or {}
         attrs = schema.get("attributes") or {}
-        # attribute def index -> (name, attribute_class, description_format)
         attr_by_name = {}
         for idx, a in attrs.items():
             if not isinstance(a, dict):
@@ -459,7 +424,7 @@ def main():
         for _cls, _pc, _slot, defindex in TARGETS:
             raw = items.get(str(defindex))
             if not isinstance(raw, dict):
-                # defindex guess missed; find the stock (baseitem) def by item_class
+                # Assumed defindex missed; find the stock (baseitem) def by item_class.
                 for k, v in items.items():
                     if not isinstance(v, dict):
                         continue
@@ -492,7 +457,7 @@ def main():
                 "used_by_classes": list((merged.get("used_by_classes") or {}).keys()),
                 "attributes": static,
                 "_stock_note": ("no stat attributes => weapon-script values ARE the stock stats"
-                                if not static else "HAS attributes - apply them to the script base"),
+                                if not static else "HAS attributes: apply them to the script base"),
             }
             print("  ok item %-5s %-28s attrs=%d" % (defindex, merged.get("item_class"), len(static)))
         result["_provenance"]["items_game"] = src

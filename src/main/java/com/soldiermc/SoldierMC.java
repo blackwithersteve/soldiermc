@@ -5,7 +5,6 @@ import net.fabricmc.api.ModInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Common entrypoint. Movement is client-side; the weapon data loads on both sides. */
 public class SoldierMC implements ModInitializer {
 
     public static final String MOD_ID = "soldiermc";

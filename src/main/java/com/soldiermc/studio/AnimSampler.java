@@ -2,11 +2,7 @@ package com.soldiermc.studio;
 
 import static com.soldiermc.studio.AnimDecode.*;
 
-/**
- * Samples one {@code mstudioanimdesc_t} at a frame into per-bone local position and rotation — a port
- * of {@code CalcBonePosition} / {@code CalcBoneQuaternion} and the {@code mstudioanim_t} chain walk.
- * Rotation data sits at {@code struct + 4}, position data after whatever rotation encoding was used.
- */
+/** CalcBoneQuaternion and CalcBonePosition from bone_setup.cpp. */
 public final class AnimSampler {
 
     private final Reader r;
@@ -21,16 +17,7 @@ public final class AnimSampler {
         this.mdl = mdl;
     }
 
-    /**
-     * Sample one animation at an integer frame plus fractional {@code s}.
-     *
-     * @param pos out, {@code [bone*3]} local translation
-     * @param rot out, {@code [bone*4]} local rotation as (x, y, z, w)
-     */
     public void sample(AnimDesc ad, int frame, float s, float[] pos, float[] rot) {
-        // Seed every bone, since the stream only mentions the ones it animates. An absolute
-        // animation's unmentioned bones stay in the bind pose; a delta animation's must be identity
-        // — zero translation, unit quaternion — because the result is added to a base pose.
         boolean delta = (ad.flags & AnimDecode.STUDIO_DELTA) != 0;
         for (MdlFile.Bone b : mdl.bones) {
             int i = b.index;
@@ -58,24 +45,21 @@ public final class AnimSampler {
         int localFrame = frame;
         if (ad.sectionFrames != 0) {
             int isec = frame / ad.sectionFrames;
-            // mstudioanimsections_t { int animblock; int animindex; } — 8 bytes
             int so = ad.structBase + ad.sectionIndex + isec * 8;
             int animBlock = r.i32At(so);
             int animIndex = r.i32At(so + 4);
-            if (animBlock != 0) return;   // external .ani block, not present in this MDL
+            if (animBlock != 0) return;   // data lives in an external .ani block
             off = ad.structBase + animIndex;
             localFrame = frame - isec * ad.sectionFrames;
         }
 
-        // mstudioanim_t { byte bone; byte flags; short nextoffset; } — 4 bytes, self-relative chain
         while (true) {
             int bone = r.u8At(off);
             int flags = r.u8At(off + 1);
             int next = r.i16At(off + 2);
 
             if (bone >= 0 && bone < mdl.bones.length) {
-                // A delta animdesc means every one of its tracks is a delta, whatever the per-bone
-                // flag says.
+                // In a delta animdesc every track is a delta, whatever its own flag says.
                 int effective = delta ? (flags | STUDIO_ANIM_DELTA) : flags;
                 calcQuaternion(off, effective, localFrame, s, mdl.bones[bone], rot, bone);
                 calcPosition(off, effective, localFrame, s, mdl.bones[bone], pos, bone);
@@ -103,10 +87,9 @@ public final class AnimSampler {
             if ((flags & STUDIO_ANIM_DELTA) != 0) {
                 rot[bi * 4] = 0f; rot[bi * 4 + 1] = 0f; rot[bi * 4 + 2] = 0f; rot[bi * 4 + 3] = 1f;
             }
-            return;   // otherwise the bind pose already written stands
+            return;
         }
 
-        // mstudioanim_valueptr_t: short offset[3], each self-relative to the pointer struct.
         int vp = data;
         float[] a1 = new float[3];
         float[] a2 = new float[3];
@@ -119,7 +102,6 @@ public final class AnimSampler {
         }
         if ((flags & STUDIO_ANIM_DELTA) == 0) {
             for (int j = 0; j < 3; j++) {
-                // bone.rot is the reference euler; the stream stores an offset from it.
                 a1[j] += referenceRot(bone, j);
                 a2[j] += referenceRot(bone, j);
             }
@@ -150,7 +132,6 @@ public final class AnimSampler {
             return;
         }
 
-        // The position value-pointer sits after the rotation value-pointer when both are animated.
         int vp = off + 4 + (((flags & STUDIO_ANIM_ANIMROT) != 0) ? 6 : 0);
         for (int j = 0; j < 3; j++) {
             int rel = r.i16At(vp + j * 2);
@@ -164,7 +145,6 @@ public final class AnimSampler {
         }
     }
 
-    /** Raw position sits after every rotation encoding that is present. */
     private static int posPtr(int off, int flags) {
         int p = off + 4;
         if ((flags & STUDIO_ANIM_RAWROT) != 0) p += 6;
@@ -174,7 +154,6 @@ public final class AnimSampler {
         return p;
     }
 
-    /** {@code mstudiobone_t.rot} — the reference euler, at struct offset 0x3C. */
     private float referenceRot(MdlFile.Bone bone, int axis) {
         return bone.refRot[axis];
     }
@@ -186,14 +165,13 @@ public final class AnimSampler {
         dst[bi * 4 + 3] = q[3];
     }
 
-    /** {@code mstudioanimdesc_t}, 100 bytes. */
     public static final class AnimDesc {
         public int structBase;
         public String name;
         public float fps;
         public int flags;
         public int numFrames;
-        public int animOffset;      // structBase + animindex, pre-resolved
+        public int animOffset;      // absolute, unlike sectionIndex
         public int sectionIndex;
         public int sectionFrames;
 

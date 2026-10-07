@@ -14,7 +14,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Hooks {@code LivingEntityRenderer.submit} to draw the Soldier mesh instead of the player model. */
 @Mixin(LivingEntityRenderer.class)
 public abstract class LivingEntityRendererSubmitMixin {
 
@@ -35,7 +34,7 @@ public abstract class LivingEntityRendererSubmitMixin {
             if (!soldiermc$announced) {
                 soldiermc$announced = true;
                 SoldierMC.LOGGER.info(
-                        "LivingEntityRendererSubmitMixin applied - the Soldier mesh is rendering");
+                        "LivingEntityRendererSubmitMixin applied: the Soldier mesh is rendering");
             }
             ci.cancel();
         }

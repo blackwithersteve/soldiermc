@@ -1,11 +1,4 @@
-"""
-Port of Valve's IceKey (src/mathlib/IceKey.cpp), Matthew Kwan's public-domain ICE cipher.
-UTIL_DecodeICE (util_shared.cpp:993) uses level 0 ("Thin ICE", 8 rounds, 64-bit key).
-
-Keys used by TF2:
-    weapon scripts + playerclass scripts : b"E2NcUkG2"   (tf_shareddefs.cpp:1614)
-    items_game / econ .ctx files          : b"A5fSXbf7"   (econ_item_system.h:79)
-"""
+"""Valve's IceKey. Keys: E2NcUkG2 for weapon and class scripts, A5fSXbf7 for econ."""
 
 _SMOD = ((333, 313, 505, 369),
          (379, 375, 319, 391),
@@ -133,7 +126,7 @@ class IceKey:
         for i in range(0, self._rounds, 2):
             l ^= self._f(r, self._ks[i])
             r ^= self._f(l, self._ks[i + 1])
-        # the C++ writes r into bytes 0-3 and l into bytes 4-7 (halves swap)
+        # The halves swap on output, as in the C++.
         return bytes([(r >> 24) & 0xff, (r >> 16) & 0xff, (r >> 8) & 0xff, r & 0xff,
                       (l >> 24) & 0xff, (l >> 16) & 0xff, (l >> 8) & 0xff, l & 0xff])
 
@@ -143,14 +136,12 @@ class IceKey:
         for i in range(self._rounds - 1, 0, -2):
             l ^= self._f(r, self._ks[i])
             r ^= self._f(l, self._ks[i - 1])
-        # the C++ writes r into bytes 0-3 and l into bytes 4-7 (halves swap)
         return bytes([(r >> 24) & 0xff, (r >> 16) & 0xff, (r >> 8) & 0xff, r & 0xff,
                       (l >> 24) & 0xff, (l >> 16) & 0xff, (l >> 8) & 0xff, l & 0xff])
 
 
 def decode_ice(data, key, level=0):
-    """Mirror of UTIL_DecodeICE: ECB over whole 8-byte blocks; a trailing partial block
-    is left untouched, as Valve does."""
+    """UTIL_DecodeICE: a trailing partial block is left untouched."""
     ik = IceKey(level, key)
     out = bytearray()
     n = len(data)

@@ -2,16 +2,13 @@ package com.soldiermc.source;
 
 import java.util.Locale;
 
-/**
- * Prints the ported simulation's movement readings, with no Minecraft and no game. Run:
- * {@code java -cp <classes> com.soldiermc.source.MovementHarness}
- */
+/** Usage: {@code java -cp <classes> com.soldiermc.source.MovementHarness} */
 public final class MovementHarness {
 
     private static int failures = 0;
 
     public static void main(String[] args) {
-        System.out.printf(Locale.ROOT, "SoldierMC movement harness — dt=%.3f  S=%.4f hu/block%n%n",
+        System.out.printf(Locale.ROOT, "SoldierMC movement harness: dt=%.3f  S=%.4f hu/block%n%n",
                 SourceFeel.DT, SourceFeel.UNITS_PER_BLOCK);
 
         groundTopSpeed();
@@ -29,9 +26,6 @@ public final class MovementHarness {
         }
     }
 
-    // ---- scenarios ----
-
-    /** Holding W on flat ground settles at the class max, 240 hu/s. */
     private static void groundTopSpeed() {
         Sim s = new Sim();
         for (int i = 0; i < 400; i++) {
@@ -41,14 +35,10 @@ public final class MovementHarness {
         check("ground top speed", s.mv.speed2D(), 240.0f, 0.5f, "hu/s");
     }
 
-    /**
-     * A plain jump launches at 271 hu/s, apexes near 50 hu, and is airborne about 0.72 s. 271 rather
-     * than 289 because three half-steps of gravity land on the jump substep: StartGravity (-6),
-     * FinishGravity inside CheckJumpButton (-6), FinishGravity at the end of FullWalkMove (-6).
-     */
+    /** 271 hu/s, not 289: three gravity half-steps of 6 land on the jump substep. */
     private static void plainJump() {
         Sim s = new Sim();
-        for (int i = 0; i < 20; i++) s.step();   // settle on the ground
+        for (int i = 0; i < 20; i++) s.step();
 
         s.mv.buttons = Buttons.IN_JUMP;
         s.step();
@@ -70,10 +60,8 @@ public final class MovementHarness {
                 apex / SourceFeel.UNITS_PER_BLOCK, airTicks * SourceFeel.DT);
     }
 
-    /** Strafe key only, turning the view: speed must rise above the 240 ground cap. */
     private static void airStrafe() {
-        // Strafing left (A) pairs with turning left, and vice versa. In Source's basis +Y is left
-        // and right = (sin yaw, -cos yaw), so exactly one pairing gains speed.
+        // +Y is left in Source, so only a strafe matching the turn direction gains speed.
         float leftPair = strafeRun(-SourceFeel.CL_SIDESPEED, +1.6f);
         float rightPair = strafeRun(+SourceFeel.CL_SIDESPEED, -1.6f);
         float wrongPair = strafeRun(-SourceFeel.CL_SIDESPEED, -1.6f);
@@ -88,16 +76,14 @@ public final class MovementHarness {
                 leftPair, rightPair, wrongPair);
         if (!gains) failures++;
         if (!wrongWayLoses) {
-            System.out.println("[FAIL] mismatched strafe gained as much as matched — basis is wrong");
+            System.out.println("[FAIL] mismatched strafe gained as much as matched: basis is wrong");
             failures++;
         }
     }
 
-    /** Build ground speed, jump, then hold one strafe key while sweeping the view. */
     private static float strafeRun(float sideMove, float yawRate) {
         Sim s = new Sim();
 
-        // Air strafing redirects momentum rather than creating it, so reach the 240 cap first.
         for (int i = 0; i < 300; i++) {
             s.mv.forwardMove = SourceFeel.CL_FORWARDSPEED;
             s.step();
@@ -119,12 +105,11 @@ public final class MovementHarness {
         return peak;
     }
 
-    /** PreventBunnyJumping clamps the whole 3D velocity to 1.2 x 240 = 288 hu/s on a ground jump. */
+    /** PreventBunnyJumping clamps velocity to 1.2 x 240 = 288 hu/s on a ground jump. */
     private static void bunnyCap() {
         Sim s = new Sim();
         for (int i = 0; i < 20; i++) s.step();
 
-        // Inject a large horizontal velocity, then jump from the ground.
         s.mv.velX = 900.0f;
         s.mv.buttons = Buttons.IN_JUMP;
         s.step();
@@ -133,7 +118,6 @@ public final class MovementHarness {
         check("bunnyhop clamp", after, 288.0f, 1.0f, "hu/s");
     }
 
-    /** Sliding along a flat wall at a shallow angle: 200 substeps at 240 hu/s = 720 hu of travel. */
     private static void wallSlideCanary() {
         Sim s = new Sim();
         s.world.wallX = 0f;
@@ -143,7 +127,7 @@ public final class MovementHarness {
 
         float startY = s.mv.originY;
         for (int i = 0; i < 200; i++) {
-            // Push into the wall at 5 degrees off parallel.
+            // 5 degrees off parallel to the wall.
             s.mv.viewYaw = 85f;
             s.mv.forwardMove = SourceFeel.CL_FORWARDSPEED;
             s.step();
@@ -151,14 +135,12 @@ public final class MovementHarness {
         float travelled = Math.abs(s.mv.originY - startY);
         float ideal = 240.0f * 200 * SourceFeel.DT;
 
-        // Allow for the acceleration ramp at the start.
+        // 0.85 allows for the acceleration ramp at the start.
         boolean ok = travelled > ideal * 0.85f;
         System.out.printf(Locale.ROOT, "%s wall slide travel  = %.1f hu  (ideal %.1f, >85%% required)%n",
                 ok ? "[ok]  " : "[FAIL]", travelled, ideal);
         if (!ok) failures++;
     }
-
-    // ---- plumbing ----
 
     private static void check(String name, float actual, float expected, float tol, String unit) {
         boolean ok = Math.abs(actual - expected) <= tol;
@@ -167,7 +149,6 @@ public final class MovementHarness {
         if (!ok) failures++;
     }
 
-    /** One simulated Soldier on flat ground. */
     private static final class Sim {
         final FlatWorld world = new FlatWorld();
         final SourceMovement move = new SourceMovement(world);

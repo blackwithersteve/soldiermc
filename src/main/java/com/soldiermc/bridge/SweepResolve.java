@@ -4,20 +4,10 @@ import com.soldiermc.source.SourceFeel;
 import com.soldiermc.source.TraceResult;
 import com.soldiermc.source.Unverified;
 
-/**
- * Turns Minecraft's per-axis clamped displacement into Source's single-fraction trace result.
- * {@code Entity.collideBoundingBox} resolves each axis independently and completes the unblocked
- * ones fully, where {@code TryPlayerMove} wants one fraction along the ray plus the impact plane.
- */
+/** Converts Minecraft's per-axis clamped move into Source's single trace fraction. */
 public final class SweepResolve {
 
-    /**
-     * @param out       filled with fraction, endpoint and plane normal, in ENGINE space
-     * @param want      requested displacement in Minecraft space
-     * @param got       what Minecraft allowed, per axis
-     * @param from,to   the engine-space endpoints, for interpolating the result
-     * @return true if anything was blocked
-     */
+    /** want and got are in Minecraft space; from, to and out are in engine space. */
     public static boolean resolve(TraceResult out,
                                   double wantX, double wantY, double wantZ,
                                   double gotX, double gotY, double gotZ,
@@ -38,9 +28,7 @@ public final class SweepResolve {
 
         if (axis < 0) return false;
 
-        // DIST_EPSILON back-off (public/coordsize.h:35). Source's trace stops the hull short of the
-        // plane; interpolating the endpoint in float lands it a sub-ULP past instead, and
-        // Minecraft's `box.maxX <= shape.minX` guard then drops that block from collision for good.
+        // Back off DIST_EPSILON: past the plane, Minecraft drops the block from collision.
         float axisLenHu = switch (axis) {
             case 0 -> Math.abs(toX - fromX);
             case 1 -> Math.abs(toZ - fromZ);
@@ -57,19 +45,15 @@ public final class SweepResolve {
         out.endZ = fromZ + (toZ - fromZ) * best;
 
         switch (axis) {
-            case 0 -> out.normalX = wantX > 0 ? -1f : 1f;   // MC x -> engine x
-            case 1 -> out.normalZ = wantY > 0 ? -1f : 1f;   // MC y -> engine z (up)
-            // MC z -> engine y is NEGATED by the rotation, so the normal's sign flips with it.
+            case 0 -> out.normalX = wantX > 0 ? -1f : 1f;
+            case 1 -> out.normalZ = wantY > 0 ? -1f : 1f;
+            // MC z is engine -y, so this normal's sign is flipped.
             default -> out.normalY = wantZ > 0 ? 1f : -1f;
         }
         return true;
     }
 
-    /**
-     * Did this axis get clipped? Exact {@code !=} in double, matching {@code Entity.collide}; the
-     * epsilon fallback exists because the back-off inside {@code Shapes.collide} has not been read
-     * out of the bytecode yet — see {@link Unverified#EXACT_BLOCKED_TEST}.
-     */
+    /** Exact != matches Entity.collide; see Unverified for the epsilon fallback. */
     public static boolean blocked(double got, double want) {
         if (want == 0.0) return false;
         if (Unverified.EXACT_BLOCKED_TEST) return got != want;

@@ -5,11 +5,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * The movement scenarios against Minecraft's collision semantics instead of a swept trace.
- * {@link BlockWorld} reproduces Minecraft's per-axis resolution and runs the mod's real
- * {@code SweepResolve}, so bridge-side bugs have somewhere to fail.
- */
 class BridgeSemanticsTest {
 
     @Test
@@ -18,7 +13,7 @@ class BridgeSemanticsTest {
         Sim s = new Sim();
         s.world.wallXBlocks = 0.0;
         s.mv.originX = SourceFeel.toUnits(-3.0);
-        s.mv.viewYaw = 0f;                    // straight into the wall
+        s.mv.viewYaw = 0f;
         for (int i = 0; i < 20; i++) s.step();
 
         float peak = 0f;
@@ -37,7 +32,7 @@ class BridgeSemanticsTest {
     }
 
     @Test
-    @DisplayName("standing on flat ground stays grounded — never flickers to airborne")
+    @DisplayName("standing on flat ground stays grounded, never flickering to airborne")
     void staysGroundedWhenWalking() {
         Sim s = new Sim();
         for (int i = 0; i < 20; i++) s.step();
@@ -48,17 +43,11 @@ class BridgeSemanticsTest {
             s.step();
             if (!s.move.onGround()) airborneTicks++;
         }
-        // One airborne substep means friction and the 240 cap stopped applying for that substep
-        // and airAccelerate ran instead.
         assertTrue(airborneTicks == 0,
                 "went airborne " + airborneTicks + " substeps while walking on flat ground");
     }
 
-    /**
-     * Tunnelling scales with distance from the world origin: one float ULP is 4e-8 blocks near
-     * spawn but ~2.4e-4 hu at 4096 blocks, and once the endpoint lands past the plane Minecraft's
-     * {@code box.maxX <= shape.minX} guard drops the block from collision permanently.
-     */
+    /** Float precision falls with distance from the origin, so far walls tunnel first. */
     @Test
     @DisplayName("the hull never crosses a block face, at any distance from world origin")
     void noTunnellingFarFromOrigin() {
@@ -68,14 +57,14 @@ class BridgeSemanticsTest {
                 double wall = originBlocks;
                 s.world.wallXBlocks = wall;
                 s.mv.originX = SourceFeel.toUnits(wall - 3.0 + offset);
-                s.mv.viewYaw = 0f;                    // straight into the wall
+                s.mv.viewYaw = 0f;
                 for (int i = 0; i < 20; i++) s.step();
 
                 float deepest = 0f;
                 for (int i = 0; i < 600; i++) {
                     s.mv.forwardMove = SourceFeel.CL_FORWARDSPEED;
                     s.step();
-                    // The hull's leading face is originX + half-width.
+                    // Leading face of the hull: originX plus the 0.3 block half-width.
                     double faceBlocks = SourceFeel.toBlocks(s.mv.originX) + 0.3;
                     deepest = (float) Math.max(deepest, faceBlocks - wall);
                 }
@@ -83,7 +72,7 @@ class BridgeSemanticsTest {
                 assertTrue(deepest <= 0.0f,
                         String.format(
                             "hull penetrated the block face by %.6f blocks at origin %.1f offset %.2f"
-                            + " — DIST_EPSILON back-off is not holding",
+                            + ": DIST_EPSILON back-off is not holding",
                             deepest, originBlocks, offset));
             }
         }

@@ -1,22 +1,11 @@
 package com.soldiermc.studio;
 
-/**
- * Forward kinematics and the skinning palette — {@code Studio_BuildMatrices} and
- * {@code ConcatTransforms} from {@code bone_setup.cpp}. All matrices are Source's
- * {@code matrix3x4_t}: 12 floats, row-major, rows 0..2 the basis rows and column 3 the translation.
- *
- * <pre>
- *   local        = quaternion + position from the animation
- *   boneToWorld  = parent.boneToWorld * local     (identity for root bones)
- *   palette      = boneToWorld * poseToBone       (poseToBone maps a vertex out of file space)
- * </pre>
- */
+/** Bone matrices as row-major matrix3x4_t: 12 floats, column 3 the translation. */
 public final class Skeleton {
 
     private Skeleton() {
     }
 
-    /** Quaternion (x,y,z,w) + translation into a row-major {@code matrix3x4_t}. */
     public static void quatToMatrix(float[] q, int qo, float[] p, int po, float[] out, int oo) {
         float x = q[qo], y = q[qo + 1], z = q[qo + 2], w = q[qo + 3];
 
@@ -36,7 +25,7 @@ public final class Skeleton {
         out[oo + 11] = p[po + 2];
     }
 
-    /** {@code ConcatTransforms}: {@code out = a * b}, both row-major 3x4. Aliasing-safe. */
+    /** out = a * b; out may alias a or b. */
     public static void concat(float[] a, int ao, float[] b, int bo, float[] out, int oo) {
         float[] t = new float[12];
         for (int row = 0; row < 3; row++) {
@@ -51,10 +40,7 @@ public final class Skeleton {
         System.arraycopy(t, 0, out, oo, 12);
     }
 
-    /**
-     * Local transforms → world transforms, walking the parent chain. Bones are stored
-     * parent-before-child in a valid MDL, so one forward pass suffices.
-     */
+    /** One forward pass works because MDL bones are stored parents first. */
     public static void buildMatrices(MdlFile mdl, float[] pos, float[] rot, float[] boneToWorld) {
         for (MdlFile.Bone b : mdl.bones) {
             int i = b.index;
@@ -69,27 +55,17 @@ public final class Skeleton {
         }
     }
 
-    /**
-     * {@code palette[i] = boneToWorld[i] * poseToBone[i]} — what a vertex is actually multiplied by.
-     * {@code poseToBone} takes a vertex from file space into the bone's local space.
-     */
     public static void buildPalette(MdlFile mdl, float[] boneToWorld, float[] palette) {
         for (MdlFile.Bone b : mdl.bones) {
             concat(boneToWorld, b.index * 12, b.poseToBone, 0, palette, b.index * 12);
         }
     }
 
-    /**
-     * Linear-blend skinning of one vertex position, up to three weighted bones. Roughly 81 % of the
-     * Soldier's vertices are single-bone, hence the fast path.
-     */
     public static void skinPosition(float[] palette, VvdFile.Vertex v, float[] out) {
         if (v.numBones <= 1) {
             transform(palette, v.bone0 * 12, v.px, v.py, v.pz, out);
             return;
         }
-        // Accumulated in scalars rather than a float[3] temp: this runs once per multi-bone vertex
-        // per frame.
         final float x = v.px, y = v.py, z = v.pz;
         float ax = 0f, ay = 0f, az = 0f;
         for (int k = 0; k < v.numBones; k++) {
@@ -104,7 +80,6 @@ public final class Skeleton {
         out[0] = ax; out[1] = ay; out[2] = az;
     }
 
-    /** The same blend for a normal — rotation only, no translation. */
     public static void skinNormal(float[] palette, VvdFile.Vertex v, float[] out) {
         if (v.numBones <= 1) {
             rotate(palette, v.bone0 * 12, v.nx, v.ny, v.nz, out);

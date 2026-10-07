@@ -10,7 +10,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Samples input in {@code handleAccumulatedMovement}, once per frame: air-strafe gain follows R. */
 @Mixin(MouseHandler.class)
 public abstract class MouseHandlerMixin {
 
@@ -28,7 +27,7 @@ public abstract class MouseHandlerMixin {
         if (!soldiermc$announced) {
             soldiermc$announced = true;
             SoldierMC.LOGGER.info(
-                    "MouseHandlerMixin applied - per-frame input sampling is live");
+                    "MouseHandlerMixin applied: per-frame input sampling is live");
         }
     }
 }
